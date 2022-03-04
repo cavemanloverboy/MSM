@@ -32,6 +32,7 @@ where
 
         // Create planner of type T
         let mut planner = FftPlanner::<T>::new();
+
         // Create forward and inverse plans
         let fwd = planner.plan_fft_forward(size);
         let inv = planner.plan_fft_inverse(size);
@@ -49,7 +50,7 @@ where
     pub fn forward(&self, data: &mut Array<Complex<T>, Dim<[usize; K]>>) -> Result<(), MSMError>
     where
         T: FftNum + ValueFrom<usize> + ScalarOperand,
-        Complex<T>: std::ops::DivAssign<T>,
+        Complex<T>: std::ops::DivAssign<T> + ScalarOperand,
         Dim<[usize; K]> : Dimension + IntoDimension,
     
     {
@@ -58,10 +59,8 @@ where
         assert_eq!(data.shape(), &[self.size; K]);
         
         // Forward needs division
-        //*data = *data/self.size.value_as::<T>().unwrap();
-        //data = &mut data.map(|x| x/self.size.value_as::<T>().unwrap());
-        *data /= &array![Complex{ re: self.size.pow(K as u32).value_as::<T>().unwrap(), im: T::zero()} ];
-        //*data /= array![ Complex{ re: self.size.value_as::<T>().unwrap(), im: T::zer;
+        //*data /= &array![Complex{ re: self.size.pow(K as u32).value_as::<T>().unwrap(), im: T::zero()} ];
+        *data /= Complex{ re: self.size.pow(K as u32).value_as::<T>().unwrap(), im: T::zero()};
 
         // Dimension dependent forward
         match K {
