@@ -2,7 +2,6 @@ use num_traits::Float;
 
 /// This `Configuration` struct stores simulations parameters
 pub struct Configuration<T: Float> {
-
     // Grid Parameters
     /// Number of pixels per axis
     pub n_grid: u32,
