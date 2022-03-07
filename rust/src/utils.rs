@@ -3,13 +3,16 @@ use conv::prelude::*;
 use ndarray::parallel::prelude::*;
 use ndarray::{
     arr1, arr2, arr3, array, s, Array, ArrayD, Axis, Dim, Dimension, IntoDimension, Ix1, Ix2, Ix3,
-    IxDyn, ScalarOperand, Slice, SliceArg,
+    IxDyn, ScalarOperand, Slice, SliceArg,iter::LanesIterMut
 };
 use num_traits::Float;
 use rustfft::{num_complex::Complex, FftNum, FftPlanner};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
+use rayon::iter::*;
 use transpose::{transpose, transpose_inplace};
+use std::sync::mpsc::channel;
+use std::time::Instant;
 
 /// This struct is intended to be initialized at the
 /// beginning of a simulation. It holds the forward
@@ -25,7 +28,7 @@ where
     // Forward operation
     pub fwd: std::sync::Arc<dyn rustfft::Fft<T>>,
     // Inverse operation
-    pub inv: std::sync::Arc<dyn rustfft::Fft<T>>,
+    pub inv: std::sync::Arc<dyn rustfft::Fft<T>>
 }
 
 impl<T, const K: usize, const S: usize> FftObject<T, K, S>
@@ -48,7 +51,7 @@ where
     }
 
     /// This function handles the forward FFT operation for Dimension = 1, 2, 3
-    pub fn forward(&self, data: &mut Array<Complex<T>, Dim<[usize; K]>>) -> Result<(), MSMError>
+    pub fn forward<'a>(&self, data: &mut Array<Complex<T>, Dim<[usize; K]>>) -> Result<(), MSMError>
     where
         T: FftNum + ValueFrom<usize> + ScalarOperand + Float + std::ops::AddAssign,
         Complex<T>: std::ops::DivAssign + std::ops::AddAssign + ScalarOperand,
@@ -100,10 +103,15 @@ where
 
             // Handle 3D case
             3 => Ok({
+
                 // Iterate through z-axis
-                for mut zlane in data.lanes_mut(Axis(2)) {
-                    self.fwd.process(zlane.as_slice_mut().expect("invalid z"));
-                }
+                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+                    let mut planner = FftPlanner::<T>::new();
+                    let fwd = planner.plan_fft_forward(S);
+                    fwd.process(zlane.as_slice_mut().unwrap());
+                });
+
+                
 
                 // Transpose xyz -> zxy
                 let mut scratch: ArrayD<Complex<T>> = ArrayD::<Complex<T>>::zeros(IxDyn(&[S, S]));
@@ -115,9 +123,11 @@ where
                 );
 
                 // Iterate through y-axis
-                for mut ylane in data.lanes_mut(Axis(2)) {
-                    self.fwd.process(ylane.as_slice_mut().expect("invalid y"));
-                }
+                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+                    let mut planner = FftPlanner::<T>::new();
+                    let fwd = planner.plan_fft_forward(S);
+                    fwd.process(zlane.as_slice_mut().unwrap());
+                });
 
                 // Transpose zxy -> yzx
                 transpose_inplace(
@@ -128,9 +138,11 @@ where
                 );
 
                 // Iterate through x-axis
-                for mut xlane in data.lanes_mut(Axis(2)) {
-                    self.fwd.process(xlane.as_slice_mut().expect("invalid x"));
-                }
+                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut xlane| {
+                    let mut planner = FftPlanner::<T>::new();
+                    let fwd = planner.plan_fft_forward(S);
+                    fwd.process(xlane.as_slice_mut().unwrap());
+                });
 
                 // Transpose yzx -> xyz
                 transpose_inplace(
@@ -303,8 +315,8 @@ fn test_fft_object_2_d_usage() {
     let orig = data.clone();
 
     // Carry out fwd + inv FFT
-    fft.forward(&mut data);
-    fft.inverse(&mut data);
+    fft.forward(& mut data);
+    fft.inverse(& mut data);
 
     // Check that sum of norm of elementwise difference is tiny or zero
     assert_abs_diff_eq!(
@@ -316,17 +328,18 @@ fn test_fft_object_2_d_usage() {
 
 #[test]
 fn test_fft_object_3_d_usage() {
+
     // Set FFT parameters
-    const FFT_SIZE: usize = 16;
+    const FFT_SIZE: usize = 128;
     const DIM: usize = 3;
-    type T = f32;
+    type T = f64;
 
     // Create FFT Object
     let fft = FftObject::<T, DIM, FFT_SIZE>::new();
 
     // Define data to operate on
     // Much easier to test on non-uniform data w/ no symmetries
-    let mut data = arr3(&[[[Complex::<T> { re: 1.0, im: 0.0 }; FFT_SIZE]; FFT_SIZE]; FFT_SIZE]);
+    let mut data: Array<Complex<T>, Ix3> = Array::from_elem((FFT_SIZE, FFT_SIZE, FFT_SIZE), Complex::<T> { re: 1.0, im: 0.0 });
     data[[0, 0, 0]] = Complex::<T> { re: 1.0, im: 0.0 };
     data[[0, 0, 1]] = Complex::<T> { re: 2.0, im: 0.0 };
     data[[0, 1, 0]] = Complex::<T> { re: 3.0, im: 0.0 };
@@ -338,8 +351,13 @@ fn test_fft_object_3_d_usage() {
     let orig = data.clone();
 
     // Carry out fwd + inv FFT
+    let now = Instant::now();
     fft.forward(&mut data);
+    println!("{} ms to do forward", now.elapsed().as_millis());
+
+    let now = Instant::now();
     fft.inverse(&mut data);
+    println!("{} ms to do forward", now.elapsed().as_millis());
 
     // Check that sum of norm of elementwise difference is tiny or zero
     assert_abs_diff_eq!(

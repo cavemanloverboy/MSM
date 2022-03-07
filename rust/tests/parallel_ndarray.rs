@@ -2,13 +2,6 @@ use ndarray::parallel::prelude::*;
 use ndarray::{arr3, Array, Axis};
 
 #[test]
-#[ignore]
-fn simple_parallel() {
-    // // create some 3d array
-    let mut my_3_d_array = arr3(&[[[0, 1], [2, 3]], [[4, 5], [6, 7]]]);
-}
-
-#[test]
 fn verbatim_test() {
     let a = Array::linspace(0., 63., 64).into_shape((4, 16)).unwrap();
     let mut sums = Vec::new();
