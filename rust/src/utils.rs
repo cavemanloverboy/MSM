@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use rayon::iter::*;
 use transpose::{transpose, transpose_inplace};
-use std::sync::mpsc::channel;
 use std::time::Instant;
+
 
 /// This struct is intended to be initialized at the
 /// beginning of a simulation. It holds the forward
@@ -55,7 +55,7 @@ where
     where
         T: FftNum + ValueFrom<usize> + ScalarOperand + Float + std::ops::AddAssign,
         Complex<T>: std::ops::DivAssign + std::ops::AddAssign + ScalarOperand,
-        Dim<[usize; K]>: Dimension + IntoDimension,
+        Dim<[usize; K]>: Dimension + IntoDimension + ndarray::RemoveAxis,
     {
         // Ensure data provided is of the size supported
         assert_eq!(data.shape(), &[S; K]);
@@ -104,11 +104,38 @@ where
             // Handle 3D case
             3 => Ok({
 
+                // // Iterate through z-axis
+                // data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+
+                //     let now = Instant::now();
+                //     let mut planner = FftPlanner::<T>::new();
+                //     println!("planner took {} micros", now.elapsed().as_micros());
+
+                //     let now = Instant::now();
+                //     let fwd = planner.plan_fft_forward(S);
+                //     println!("fwd plan took {} micros", now.elapsed().as_micros());
+
+                //     let now = Instant::now();
+                //     fwd.process(zlane.as_slice_mut().unwrap());
+                //     println!("forward ffw took {} micros", now.elapsed().as_micros());
+                // });
+
                 // Iterate through z-axis
-                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+                data.outer_iter_mut().into_iter().par_bridge().for_each(|mut xyplane| {
+
+                    //let now = Instant::now();
                     let mut planner = FftPlanner::<T>::new();
+                    //println!("planner took {} micros", now.elapsed().as_micros());
+
+                    //let now = Instant::now();
                     let fwd = planner.plan_fft_forward(S);
-                    fwd.process(zlane.as_slice_mut().unwrap());
+                    //println!("fwd plan took {} micros", now.elapsed().as_micros());
+
+                    for mut zlane in xyplane.rows_mut(){
+                        //let now = Instant::now();
+                        fwd.process(zlane.as_slice_mut().unwrap());
+                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
+                    }
                 });
 
                 
@@ -122,11 +149,28 @@ where
                     S * S,
                 );
 
-                // Iterate through y-axis
-                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+                // // Iterate through y-axis
+                // data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut zlane| {
+                //     let mut planner = FftPlanner::<T>::new();
+                //     let fwd = planner.plan_fft_forward(S);
+                //     fwd.process(zlane.as_slice_mut().unwrap());
+                // });
+                // Iterate through z-axis
+                data.outer_iter_mut().into_iter().par_bridge().for_each(|mut zxplane| {
+
+                    //let now = Instant::now();
                     let mut planner = FftPlanner::<T>::new();
+                    //println!("planner took {} micros", now.elapsed().as_micros());
+
+                    //let now = Instant::now();
                     let fwd = planner.plan_fft_forward(S);
-                    fwd.process(zlane.as_slice_mut().unwrap());
+                    //println!("fwd plan took {} micros", now.elapsed().as_micros());
+
+                    for mut ylane in zxplane.rows_mut(){
+                        //let now = Instant::now();
+                        fwd.process(ylane.as_slice_mut().unwrap());
+                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
+                    }
                 });
 
                 // Transpose zxy -> yzx
@@ -138,10 +182,27 @@ where
                 );
 
                 // Iterate through x-axis
-                data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut xlane| {
+                // data.lanes_mut(Axis(2)).into_iter().par_bridge().for_each(|mut xlane| {
+                //     let mut planner = FftPlanner::<T>::new();
+                //     let fwd = planner.plan_fft_forward(S);
+                //     fwd.process(xlane.as_slice_mut().unwrap());
+                // });
+
+                data.outer_iter_mut().into_iter().par_bridge().for_each(|mut yzplane| {
+
+                    //let now = Instant::now();
                     let mut planner = FftPlanner::<T>::new();
+                    //println!("planner took {} micros", now.elapsed().as_micros());
+
+                    //let now = Instant::now();
                     let fwd = planner.plan_fft_forward(S);
-                    fwd.process(xlane.as_slice_mut().unwrap());
+                    //println!("fwd plan took {} micros", now.elapsed().as_micros());
+
+                    for mut xlane in yzplane.rows_mut(){
+                        //let now = Instant::now();
+                        fwd.process(xlane.as_slice_mut().unwrap());
+                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
+                    }
                 });
 
                 // Transpose yzx -> xyz
@@ -253,6 +314,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub enum MSMError {
     IncorrectNumDumensions(usize),
 }
@@ -329,8 +391,10 @@ fn test_fft_object_2_d_usage() {
 #[test]
 fn test_fft_object_3_d_usage() {
 
+    use std::time::Instant;
+
     // Set FFT parameters
-    const FFT_SIZE: usize = 128;
+    const FFT_SIZE: usize = 64;
     const DIM: usize = 3;
     type T = f64;
 
