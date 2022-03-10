@@ -29,10 +29,13 @@ class SimObj(object):
         s.Ns = None 
         s.n = None 
         s.T = None 
-        s.spec_grid = None  
+        s.kx_ord = None 
+        s.kx = None 
+        s.spec_grid = None 
         
         # meta params
         s.time0 = None
+        s.drops = None 
         s.ofile = None
         s.solvers = []
     
@@ -75,11 +78,11 @@ class SimObj(object):
             solver_.DataDrop(0, self.ofile)
 
         # loops through data drops
-        for i in range(self.frames):
+        for i in range(self.drops):
             
             # update the simulation time
             dt_ = self.dt
-            self.T += dt_ * self.framesteps
+            self.T = (i+1)*self.Tfinal/self.drops
 
             # loop through each solver
             for solver_ in self.solvers: 
@@ -88,7 +91,8 @@ class SimObj(object):
                     # ------------ step 3d ---------------- #
                     # update dynamical variables
                     with np.errstate(divide ='ignore', invalid='ignore'):
-                        solver_.Update(dt_ * solver_.T_scale, self)   
+                        solver_.Update(dt_ * solver_.T_scale, 
+                        self.T*solver_.T_scale, self)   
                     # ------------------------------------- #
                 
                 if solver_.working:
@@ -99,36 +103,13 @@ class SimObj(object):
 
             # info drop on terminal
             if verbose:
-                u.repeat_print(('%i hrs, %i mins, %i s remaining.' %u.remaining(i + 1, self.frames, self.time0)))
+                u.repeat_print(('%i hrs, %i mins, %i s remaining.' %u.remaining(i + 1, self.drops, self.time0)))
 
 
     def ValidIndex(self, i):
         return (i < self.N) and (i >= 0)
 
-    def GetC(self, i, j):
-        C_ij = 0.
-        
-        if (i != j):
-            C_ij = self.C / (self.kord[i] - self.kord[j])**2 + self.Lambda0
-        else:
-            C_ij = self.Lambda0
-
-        return C_ij
-
-    def GetLam(self, ind1, ind2, ind3, ind4):
-        C_ij = self.Lambda0
-        
-        if ind1 != ind3 and np.abs(self.C) > 0:
-            C_ij += .5*self.C / (self.kord[ind1] - self.kord[ind3])**2
-        if ind1 != ind4 and np.abs(self.C) > 0:
-            C_ij += .5*self.C / (self.kord[ind1] - self.kord[ind4])**2
-
-        return C_ij
-
     def EndSim(self, text = True):
-        for solver_ in self.solvers:
-            # output state of dynamical variables
-            solver_.DataDrop(self.frames, self.ofile)
         if text:
             print('\nsim completed in %i hrs, %i mins, %i s' %u.hms(time.time()-self.time0))
             print("output: ", self.ofile)
