@@ -14,7 +14,7 @@ fn main() {
     rayon::ThreadPoolBuilder::new().num_threads({println!("using {} threads", args.threads); args.threads.into()}).build_global().unwrap();
 
     // Set FFT parameters
-    const FFT_SIZE: usize = 512;
+    const FFT_SIZE: usize = 256;
     const DIM: usize = 3;
     type T = f64;
 
