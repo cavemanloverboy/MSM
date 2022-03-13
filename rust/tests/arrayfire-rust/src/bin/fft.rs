@@ -39,7 +39,7 @@ fn main() {
     println!("3D init array took {} millis", now.elapsed().as_millis());
     //af_print!("Output", array);
     let now = Instant::now();
-    let nffts = 10000;
+    let nffts = 1000;
     for _ in 0..nffts {
         fft3_inplace(&mut array, 1.0/(FFT_SIZE as f64).powf(3.0/2.0));
         //af_print!("Output", array);
