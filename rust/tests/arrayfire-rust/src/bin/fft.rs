@@ -39,13 +39,14 @@ fn main() {
     println!("3D init array took {} millis", now.elapsed().as_millis());
     //af_print!("Output", array);
     let now = Instant::now();
-    for _ in 0..10000 {
+    let nffts = 10000;
+    for _ in 0..nffts {
         fft3_inplace(&mut array, 1.0/(FFT_SIZE as f64).powf(3.0/2.0));
         //af_print!("Output", array);
         ifft3_inplace(&mut array, 1.0/(FFT_SIZE as f64).powf(3.0/2.0));
         //af_print!("Output", array);
     }
-    println!("3D forward/inverse fft took {} millis", now.elapsed().as_millis());
+    println!("Performed {0} ({1} x {1} x {1}) 3D forward/inverse fft in {2} millis", nffts, FFT_SIZE, now.elapsed().as_millis());
 
 
 
