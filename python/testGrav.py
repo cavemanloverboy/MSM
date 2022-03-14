@@ -83,7 +83,7 @@ def initSim():
     s.T = 0
 
     dk = 1./dx
-    x = dx*(.5+np.arange(-N/2, N/2))
+    x = dx*(.5+np.arange(-N//2, N//2))
     kx = 2*np.pi*sp.fftfreq(N, d = L/N)
     kx_ord = sp.fftshift(kx)
     y = sp.fftfreq(len(kx_ord), d=dk) *N
@@ -116,11 +116,11 @@ def main(ofile):
     time0 = time.time()
 
     if len(dIs) >= 1:
-        print "begining data interpretation"
+        print("begining data interpretation")
 
         for j in range(len(dIs)):
             dIs[j].main(ofile)
-        print 'analysis completed in %i hrs, %i mins, %i s' %u_.hms(time.time()-time0)
+        print('analysis completed in %i hrs, %i mins, %i s' %u_.hms(time.time()-time0))
     u_.ding()
 
 if __name__ == "__main__":
