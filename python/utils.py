@@ -283,8 +283,8 @@ def remaining(done, total, start):
 # returns (hours, mins, secs) remaining
 def hms(T):
 	r = T
-	hrs = int(r)/(60*60)
-	mins = int(r%(60*60))/(60)
+	hrs = int(r)//(60*60)
+	mins = int(r%(60*60))//(60)
 	s = int(r%60)
 	return (hrs, mins, s)
 
