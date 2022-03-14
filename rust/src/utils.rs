@@ -6,7 +6,7 @@ use ndarray::{
     IxDyn, ScalarOperand, Slice, SliceArg,iter::LanesIterMut
 };
 use num_traits::Float;
-use rustfft::{num_complex::Complex, FftNum, FftPlanner};
+use rustfft::{num_complex::Complex, FftNum, FftPlanner, FftDirection, algorithm::Radix4, Fft};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use rayon::iter::*;
@@ -124,18 +124,17 @@ where
                 data.outer_iter_mut().into_iter().par_bridge().for_each(|mut xyplane| {
 
                     //let now = Instant::now();
-                    let mut planner = FftPlanner::<T>::new();
+                    //let mut planner = FftPlanner::<T>::new();
                     //println!("planner took {} micros", now.elapsed().as_micros());
 
                     //let now = Instant::now();
-                    let fwd = planner.plan_fft_forward(S);
+                    //let fwd = planner.plan_fft_forward(S);
                     //println!("fwd plan took {} micros", now.elapsed().as_micros());
 
-                    for mut zlane in xyplane.rows_mut(){
-                        //let now = Instant::now();
-                        fwd.process(zlane.as_slice_mut().unwrap());
-                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
-                    }
+                    let fft = Radix4::new(S, FftDirection::Forward);
+
+                    let mut scratch: ArrayD<Complex<T>> = ArrayD::<Complex<T>>::zeros(IxDyn(&[fft.get_inplace_scratch_len()]));
+                    fft.process_with_scratch(xyplane.as_slice_mut().unwrap(), scratch.as_slice_mut().unwrap());
                 });
 
                 
@@ -159,18 +158,17 @@ where
                 data.outer_iter_mut().into_iter().par_bridge().for_each(|mut zxplane| {
 
                     //let now = Instant::now();
-                    let mut planner = FftPlanner::<T>::new();
+                    //let mut planner = FftPlanner::<T>::new();
                     //println!("planner took {} micros", now.elapsed().as_micros());
 
                     //let now = Instant::now();
-                    let fwd = planner.plan_fft_forward(S);
+                    //let fwd = planner.plan_fft_forward(S);
                     //println!("fwd plan took {} micros", now.elapsed().as_micros());
 
-                    for mut ylane in zxplane.rows_mut(){
-                        //let now = Instant::now();
-                        fwd.process(ylane.as_slice_mut().unwrap());
-                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
-                    }
+                    let fft = Radix4::new(S, FftDirection::Forward);
+
+                    let mut scratch: ArrayD<Complex<T>> = ArrayD::<Complex<T>>::zeros(IxDyn(&[fft.get_inplace_scratch_len()]));
+                    fft.process_with_scratch(zxplane.as_slice_mut().unwrap(), scratch.as_slice_mut().unwrap());
                 });
 
                 // Transpose zxy -> yzx
@@ -191,18 +189,17 @@ where
                 data.outer_iter_mut().into_iter().par_bridge().for_each(|mut yzplane| {
 
                     //let now = Instant::now();
-                    let mut planner = FftPlanner::<T>::new();
+                    //let mut planner = FftPlanner::<T>::new();
                     //println!("planner took {} micros", now.elapsed().as_micros());
 
                     //let now = Instant::now();
-                    let fwd = planner.plan_fft_forward(S);
+                    //let fwd = planner.plan_fft_forward(S);
                     //println!("fwd plan took {} micros", now.elapsed().as_micros());
 
-                    for mut xlane in yzplane.rows_mut(){
-                        //let now = Instant::now();
-                        fwd.process(xlane.as_slice_mut().unwrap());
-                        //println!("forward ffw took {} micros", now.elapsed().as_micros());
-                    }
+                    let fft = Radix4::new(S, FftDirection::Forward);
+
+                    let mut scratch: ArrayD<Complex<T>> = ArrayD::<Complex<T>>::zeros(IxDyn(&[fft.get_inplace_scratch_len()]));
+                    fft.process_with_scratch(yzplane.as_slice_mut().unwrap(), scratch.as_slice_mut().unwrap());
                 });
 
                 // Transpose yzx -> xyz
@@ -269,12 +266,18 @@ where
             // Handle 3D Case
             3 => Ok({
 
+                let mut fft_time: u128 = 0;
+                let mut trn_time: u128 = 0;
+
+                let now = Instant::now();
                 // Iterate through z-axis
                 for mut zlane in data.lanes_mut(Axis(2)) {
                     self.inv.process(zlane.as_slice_mut().expect("invalid z"));
                 }
+                fft_time = fft_time + now.elapsed().as_micros();
 
                 // Transpose xyz -> zxy
+                let now = Instant::now();
                 let mut scratch: ArrayD<Complex<T>> = ArrayD::<Complex<T>>::zeros(IxDyn(&[S, S]));
                 transpose_inplace(
                     data.as_slice_mut().unwrap(),
@@ -282,32 +285,43 @@ where
                     S,
                     S * S,
                 );
+                trn_time = trn_time + now.elapsed().as_micros();
 
                 // Iterate through y-axis
+                let now = Instant::now();
                 for mut ylane in data.lanes_mut(Axis(2)) {
                     self.inv.process(ylane.as_slice_mut().expect("invalid y"));
                 }
+                fft_time = fft_time + now.elapsed().as_micros();
 
                 // Transpose zxy --> yzx
+                let now = Instant::now();
                 transpose_inplace(
                     data.as_slice_mut().unwrap(),
                     scratch.as_slice_mut().unwrap(),
                     S,
                     S * S,
                 );
+                trn_time = trn_time + now.elapsed().as_micros();
 
                 // Iterate through x-axis
+                let now = Instant::now();
                 for mut xlane in data.lanes_mut(Axis(2)) {
                     self.inv.process(xlane.as_slice_mut().expect("invalid x"));
                 }
+                fft_time = fft_time + now.elapsed().as_micros();
 
                 // Transpose yzx -> xyz
+                let now = Instant::now();
                 transpose_inplace(
                     data.as_slice_mut().unwrap(),
                     scratch.as_slice_mut().unwrap(),
                     S,
                     S * S,
                 );
+                trn_time = trn_time + now.elapsed().as_micros();
+
+                println!("spent {} micros in FFT and {} micros in transposes", fft_time, trn_time);
             }),
             k => Err(MSMError::IncorrectNumDumensions(k)),
         }
@@ -394,7 +408,7 @@ fn test_fft_object_3_d_usage() {
     use std::time::Instant;
 
     // Set FFT parameters
-    const FFT_SIZE: usize = 64;
+    const FFT_SIZE: usize = 512;
     const DIM: usize = 3;
     type T = f64;
 
@@ -421,7 +435,7 @@ fn test_fft_object_3_d_usage() {
 
     let now = Instant::now();
     fft.inverse(&mut data);
-    println!("{} ms to do forward", now.elapsed().as_millis());
+    println!("{} ms to do inverse", now.elapsed().as_millis());
 
     // Check that sum of norm of elementwise difference is tiny or zero
     assert_abs_diff_eq!(
