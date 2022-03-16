@@ -9,7 +9,6 @@ fn main() {
     println!("{:?}", device_mem_info());
 
     const FFT_SIZE: u64 = 512;
-    let dims = Dim4::new(&[FFT_SIZE, 1, 1, 1]);
     type T = f32;
 
     // let array: Array<Complex<T>> = constant!(Complex::<T>::new(0.0, 2.0); FFT_SIZE, FFT_SIZE, FFT_SIZE);

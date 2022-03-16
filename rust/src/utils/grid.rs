@@ -2,7 +2,7 @@
 use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, Fromf64, ComplexFloating};
 use num::{Float, Complex, FromPrimitive, ToPrimitive};
 use std::fmt::Display;
-use approx::{assert_abs_diff_eq, AbsDiffEq};
+use approx::{assert_abs_diff_eq};
 
 
 pub fn normalize<T, const K: usize>(

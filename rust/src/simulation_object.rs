@@ -1,4 +1,4 @@
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, c32, Dim4};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint};
 use crate::utils::fft::forward;
 use conv::*;
 use std::fmt::Display;
@@ -195,7 +195,7 @@ where
 #[test]
 fn test_new_grid() {
 
-    use arrayfire::af_print;
+    use arrayfire::{af_print, Dim4};
 
     // Grid parameters
     const K: usize = 1;

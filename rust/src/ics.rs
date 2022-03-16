@@ -2,9 +2,8 @@ use crate::{
     simulation_object::*,
     utils::grid::{normalize, check_norm},
 };
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, sum_all, slice, ImplicitPromote, Fromf64, conjg};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, Fromf64};
 use num::{Complex, Float, FromPrimitive};
-use conv::ValueFrom;
 use std::fmt::Display;
 use std::iter::Iterator;
 
@@ -95,6 +94,7 @@ where
 #[test]
 fn test_cold_gauss_initialization() {
     
+    use arrayfire::{sum_all, conjg};
     use approx::assert_abs_diff_eq;
 
     // Gaussian parameters
