@@ -1,34 +1,610 @@
-use ndarray::arr1;
-use rustfft::{num_complex::Complex, FftPlanner};
 
 #[test]
-fn test_fft() {
-    // Perform a forward FFT of size FFT_SIZE
-    const FFT_SIZE: usize = 16;
+fn test_arrayfire_1_d_inplace_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
     type T = f32;
 
-    // Plan forward and inverse ffts
-    let mut planner = FftPlanner::<T>::new();
-    let fft = planner.plan_fft_forward(FFT_SIZE);
-    let ifft = planner.plan_fft_inverse(FFT_SIZE);
+    // Set dimension, fft size
+    const K: usize = 1;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
 
-    // Define data, save copy for comparison
-    let mut buffer = arr1(&[Complex::<T> { re: 1.0, im: 0.0 }; FFT_SIZE]);
-    let orig = buffer.clone();
-    println!("{:?}", buffer);
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
 
-    // Do forward FFT, and divide by FFT_size
-    fft.process(buffer.as_slice_mut().unwrap());
-    buffer = buffer / (FFT_SIZE as T); //.iter().map(| Complex{re:x, im:y}| Complex{re: *x/FFT_SIZE as T, im: *y/FFT_SIZE as T}).collect();
-    println!("{:?}", buffer);
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, 1, 1, 1]);
 
-    // Do inverse FFT and assert it is close to original
-    ifft.process(buffer.as_slice_mut().unwrap());
-    println!("{:?}", buffer);
-    assert!(
-        orig.iter()
-            .zip(buffer)
-            .fold(0.0, |acc, (x, y)| acc + (x.re - y.re).abs())
-            < 1.0e-6
+    // Initialize array
+    let mut array : Array<Complex<T>> = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    array.host(&mut vec_array);
+
+    // Check norm of difference is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_1_d_inplace_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 1;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, 1, 1, 1]);
+
+    // Initialize array
+    let mut array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    array.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+fn test_arrayfire_2_d_inplace_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f32;
+
+    // Set dimension, fft size
+    const K: usize = 2;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
+
+    // Initialize array
+    let mut array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    array.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );  
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_2_d_inplace_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 2;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
+
+    // Initialize array
+    let mut array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    array.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+fn test_arrayfire_3_d_inplace_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f32;
+
+    // Set dimension, fft size
+    const K: usize = 3;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
+
+    // Initialize array
+    let mut array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    //af_print!("orig", array);
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    //af_print!("fwd", array);
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    //af_print!("inv", array);
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    array.host(&mut vec_array);
+    
+    println!("{:?}", vec_array);
+    println!("{:?}", values);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_3_d_inplace_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 3;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
+
+    // Initialize array
+    let mut array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+
+    // Host
+    array.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+
+
+#[test]
+fn test_arrayfire_1_d_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f32;
+
+    // Set dimension, fft size
+    const K: usize = 1;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, 1, 1, 1]);
+
+    // Initialize array
+    let array : Array<Complex<T>> = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    output.host(&mut vec_array);
+
+    // Check norm of difference is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_1_d_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 1;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, 1, 1, 1]);
+
+    // Initialize array
+    let array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    output.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+fn test_arrayfire_2_d_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f32;
+
+    // Set dimension, fft size
+    const K: usize = 2;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
+
+    // Initialize array
+    let array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    output.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );  
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_2_d_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 2;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
+
+    // Initialize array
+    let array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    output.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+fn test_arrayfire_3_d_c32_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f32;
+
+    // Set dimension, fft size
+    const K: usize = 3;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c32 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
+
+    // Initialize array
+    let array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    //af_print!("orig", array);
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    //af_print!("fwd", array);
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    //af_print!("inv", array);
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+    // Host
+    output.host(&mut vec_array);
+    
+    //println!("{:?}", vec_array);
+    //println!("{:?}", values);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
+    );
+}
+
+#[test]
+#[cfg_attr(not(feature = "c64"), ignore)]
+fn test_arrayfire_3_d_c64_integration() {
+    
+    // Gather requirements for unit test
+    use arrayfire::{Dim4, Array};
+    use msm::utils::fft::{forward, inverse};
+    use approx::assert_abs_diff_eq;
+    use num::Complex;
+
+    type T = f64;
+
+    // Set dimension, fft size
+    const K: usize = 3;
+    const S: usize = 2;
+    const SIZE: usize = S.pow(K as u32);
+
+    // c64 values to go in array
+    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+
+    // Specify dimensions of
+    let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
+
+    // Initialize array
+    let array = Array::new(&values, dims);
+
+    // Perform inplace FFT + inverse
+    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+
+    // Create hosts for comparison
+    let mut vec_array = vec![Complex::<T>::default(); SIZE];
+
+
+    // Host
+    output.host(&mut vec_array);
+
+    // Check norm of diffence is small
+    assert_abs_diff_eq!(
+
+        vec_array
+            .iter()
+            .zip(&values)
+            .fold(0.0, |acc: T, (x,y)| acc + (x-y).norm()),
+
+            0.0,
+
+            epsilon = 1e-6
     );
 }
