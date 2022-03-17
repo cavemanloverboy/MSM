@@ -11,8 +11,7 @@ pub fn normalize<T, const K: usize>(
 )
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T>,
-    <<num::Complex<T> as arrayfire::HasAfEnum>::AggregateOutType as arrayfire::HasAfEnum>::BaseType: Fromf64,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
 {
     
     // Compute norm as grid * conjg(grid)
@@ -34,8 +33,7 @@ pub fn check_norm<T, const K: usize>(
 ) -> bool
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ToPrimitive,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T>,
-    <<num::Complex<T> as arrayfire::HasAfEnum>::AggregateOutType as arrayfire::HasAfEnum>::BaseType: Fromf64,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
 {
     
     // Compute norm as grid * conjg(grid)

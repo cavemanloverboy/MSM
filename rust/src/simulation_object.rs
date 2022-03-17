@@ -1,5 +1,13 @@
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint};
-use crate::utils::fft::forward;
+use arrayfire::{
+    Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator,
+    mul, real, conjg, constant
+};
+use crate::utils::{
+    fft::{forward, inverse},
+    complex::complex_constant,
+    io,
+    error::MSMError,
+};
 use conv::*;
 use std::fmt::Display;
 use num::{Complex, Float, FromPrimitive};
@@ -7,9 +15,8 @@ use num::{Complex, Float, FromPrimitive};
 /// This struct holds the grids which store the wavefunction and its Fourier transform
 pub struct SimulationGrid<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + FloatingPoint,
-    <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
+    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
+    Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
     // Spatial Fields
@@ -59,9 +66,8 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
 pub struct SimulationObject<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint,
-    <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
     /// This has the wavefunction and its Fourier transform
@@ -74,9 +80,8 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationGrid<T, K, S>
 where
-    T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
-    <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
+    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
  {
 
     pub fn new(
@@ -157,9 +162,8 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + Display + FromPrimitive,
-    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>>,
-    <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
+    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T>,
+    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
 
     pub fn new(
@@ -191,6 +195,44 @@ where
             grid,
             parameters,
         }
+    }
+
+    /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
+    pub fn update(&mut self) {
+
+        // Compute density field
+        let ρ: Array<T> = self.get_density();
+
+    }
+
+    /// This function computes the shape of the grid
+    pub fn get_shape(&self) -> Result<(u64, u64, u64, u64), MSMError> {
+        match K {
+            1 => Ok((S as u64, 1, 1, 1)),
+            2 => Ok((S as u64, S as u64, 1, 1)),
+            3 => Ok((S as u64, S as u64, S as u64, 1)),
+            _ => Err(MSMError::InvalidNumDumensions(K))
+        }
+    }
+
+    /// This function computes the realspace density 
+    pub fn get_density(&self) -> Array<T> {
+        let shape = self.get_shape().unwrap();
+        mul(
+            &constant!(
+                    self.parameters.total_mass;
+                    shape.0, shape.1, shape.2, shape.3
+            ),
+            &real(
+                &mul(
+                    &self.grid.ψ,
+                    &conjg(&self.grid.ψ),
+                    false
+                )
+            ),
+            false
+        )
+
     }
 }
 

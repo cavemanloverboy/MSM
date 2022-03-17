@@ -2,7 +2,7 @@ use crate::{
     simulation_object::*,
     utils::grid::{normalize, check_norm},
 };
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, Fromf64};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, Fromf64, ConstGenerator};
 use num::{Complex, Float, FromPrimitive};
 use std::fmt::Display;
 use std::iter::Iterator;
@@ -14,10 +14,8 @@ pub fn cold_gauss<T, const K: usize, const S: usize>(
     params: SimulationParameters<T>,
 ) -> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>>+ HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T>,
-    <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum + ComplexFloating,
-    <<num::Complex<T> as arrayfire::HasAfEnum>::AggregateOutType as arrayfire::HasAfEnum>::BaseType: Fromf64,
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T>,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
 {
 
     // Construct spatial grid
