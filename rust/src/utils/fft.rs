@@ -1,5 +1,5 @@
 use arrayfire::*;
-use num::{Complex, Float};
+use num::{Complex, Float, FromPrimitive};
 
 pub fn forward<T, const K: usize, const S: usize>(
     array: &Array<Complex<T>>
@@ -76,7 +76,45 @@ where
 }
 
 
+pub fn get_kgrid<T, const S: usize>(
+    dx: T, 
+) -> [T; S]
+where
+    T: Float + FromPrimitive,
+{
+    // Ensure grid is odd
+    assert!(S % 2 == 0);
+
+    // Initialize kgrid
+    let mut kgrid = [T::zero(); S];
+
+    for (k, mut i) in kgrid.iter_mut().zip(0..S as i64) {
+
+        if i < (S as i64 / 2) {
+            *k = T::from_i64(i).unwrap() / (T::from_usize(S).unwrap() * dx);
+        } else {
+            i -= S as i64;
+            *k = T::from_i64(i).unwrap() / (T::from_usize(S).unwrap() * dx);
+        }
+    }
+
+    kgrid
+}
+
 #[derive(Debug)]
 pub enum MSMError {
     InvalidNumDumensions(usize),
+}
+
+
+
+
+
+
+#[test]
+fn test_k_grid() {
+
+    // Generate simple k grid and ensure it's correct
+    let k_grid = get_kgrid::<f32, 4>(0.25);
+    assert_eq!(k_grid, [0.0, 1.0, -2.0, -1.0])
 }

@@ -9,8 +9,8 @@ use std::iter::Iterator;
 
 
 pub fn cold_gauss<T, const K: usize, const S: usize>(
-    mean: [f64; 3],
-    std: [f64; 3],
+    mean: [T; 3],
+    std: [T; 3],
     params: SimulationParameters<T>,
 ) -> SimulationObject<T>
 where
@@ -31,7 +31,7 @@ where
     let mut ψx_values = [Complex::<T>::new(T::zero(), T::zero()); S];
     for (i, ψx_val) in ψx_values.iter_mut().enumerate(){
         *ψx_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((x[i] - T::from_f64(-mean[0]).unwrap()) / T::from_f64(std[0]).unwrap()).powf(T::from_f64(2.0).unwrap())).exp(),
+            (T::from_f64(-0.5).unwrap() * ((x[i] - mean[0]) / std[0]).powf(T::from_f64(2.0).unwrap())).exp(),
             T::zero(),
         );
     }
@@ -44,7 +44,7 @@ where
     let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
     for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
         *ψy_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((y[i] - T::from_f64(-mean[1]).unwrap()) / T::from_f64(std[1]).unwrap()).powf(T::from_f64(2.0).unwrap())).exp(),
+            (T::from_f64(-0.5).unwrap() * ((y[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
             T::zero(),
         );
     }
@@ -58,7 +58,7 @@ where
     let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
     for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
         *ψz_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((z[i] - T::from_f64(-mean[2]).unwrap()) / T::from_f64(std[2]).unwrap()).powf(T::from_f64(2.0).unwrap())).exp(),
+            (T::from_f64(-0.5).unwrap() * ((z[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
             T::zero(),
         );
     }
@@ -77,6 +77,7 @@ where
         ψ,
         params.n_grid,
         params.axis_length,
+        params.time,
         params.total_sim_time,
         params.num_data_dumps,
         params.total_mass,
@@ -108,6 +109,7 @@ fn test_cold_gauss_initialization() {
     const S: usize = 128;
     let n_grid = S as u32;
     let axis_length = 1.0;
+    let time = 1.0;
     let total_sim_time = 1.0;
     let num_data_dumps = 100;
     let total_mass = 1.0;
@@ -116,6 +118,7 @@ fn test_cold_gauss_initialization() {
     let params = SimulationParameters::<T>::new(
         n_grid,
         axis_length,
+        time,
         total_sim_time,
         num_data_dumps,
         total_mass,

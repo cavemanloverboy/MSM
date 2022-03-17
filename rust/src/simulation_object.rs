@@ -36,6 +36,8 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
     pub dk: U,
 
     // Temporal Parameters
+    /// Current simulation time
+    pub time: U,
     /// Total simulation time
     pub total_sim_time: U,
     /// Number of data dumps
@@ -102,6 +104,7 @@ where
     pub fn new(
         n_grid: u32,
         axis_length: U,
+        time: U,
         total_sim_time: U,
         num_data_dumps: u32,
         total_mass: U,
@@ -120,6 +123,7 @@ where
             axis_length,
             dx,
             dk,
+            time,
             total_sim_time,
             num_data_dumps,
             total_mass,
@@ -142,6 +146,7 @@ where
         write!(f, "axis_length    = {}\n", self.axis_length)?;
         write!(f, "dx             = {}\n", self.dx)?;
         write!(f, "dk             = {}\n", self.dk)?;
+        write!(f, "current_time   = {}\n", self.time)?;
         write!(f, "total_sim_time = {}\n", self.total_sim_time)?;
         write!(f, "num_data_dumps = {}\n", self.num_data_dumps)?;
         write!(f, "total_mass     = {}\n", self.total_mass)?;
@@ -165,6 +170,7 @@ where
         ψ: Array<Complex<T>>,
         n_grid: u32,
         axis_length: T,
+        time: T,
         total_sim_time: T,
         num_data_dumps: u32,
         total_mass: T,
@@ -177,6 +183,7 @@ where
         let parameters = SimulationParameters::<T>::new(
             n_grid,
             axis_length,
+            time,
             total_sim_time,
             num_data_dumps,
             total_mass,
@@ -195,7 +202,8 @@ where
 #[test]
 fn test_new_grid() {
 
-    use arrayfire::{af_print, Dim4};
+    use arrayfire::Dim4;
+    //use arrayfire::af_print;
 
     // Grid parameters
     const K: usize = 1;
@@ -207,9 +215,9 @@ fn test_new_grid() {
     let ψ: Array<Complex<f32>> = Array::new(&values, dims);
 
     // Initialize grid
-    let grid: SimulationGrid<f32> = SimulationGrid::<f32>::new::<K, S>(ψ);
-    af_print!("ψ", grid.ψ);
-    af_print!("ψk", grid.ψk);
+    let _grid: SimulationGrid<f32> = SimulationGrid::<f32>::new::<K, S>(ψ);
+    //af_print!("ψ", grid.ψ);
+    //af_print!("ψk", grid.ψk);
 }
 
 
@@ -220,6 +228,7 @@ fn test_new_sim_parameters() {
 
     let n_grid: u32 = 16;
     let axis_length: T = 1.0; 
+    let time: T = 0.0;
     let total_sim_time: T = 1.0;
     let num_data_dumps: u32 = 100;
     let total_mass: T = 1.0;
@@ -229,6 +238,7 @@ fn test_new_sim_parameters() {
     let params = SimulationParameters::new(
         n_grid,
         axis_length,
+        time,
         total_sim_time,
         num_data_dumps,
         total_mass,
