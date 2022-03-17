@@ -73,7 +73,7 @@ where
     let mut ψ = mul(& ψ, &ψz, true);
     normalize::<T, K>(&mut ψ, params.dx);
     debug_assert!(check_norm::<T, K>(&ψ, params.dx));
-    SimulationObject::new::<K, S>(
+    SimulationObject::<T, K, S>::new(
         ψ,
         params.n_grid,
         params.axis_length,

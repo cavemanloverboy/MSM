@@ -5,7 +5,7 @@ use std::fmt::Display;
 use num::{Complex, Float, FromPrimitive};
 
 /// This struct holds the grids which store the wavefunction and its Fourier transform
-pub struct SimulationGrid<T>
+pub struct SimulationGrid<T, const K: usize, const S: usize>
 where
     T: Float + FloatingPoint,
     Complex<T>: HasAfEnum + FloatingPoint,
@@ -17,7 +17,7 @@ where
     pub ψ: Array<Complex<T>>,
 
     /// Fourier space
-    pub ψk: Array<<Complex<T> as arrayfire::HasAfEnum>::ComplexOutType>,
+    pub ψk: Array<Complex<T>>,
 }
 
 
@@ -57,7 +57,7 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
 /// In the original python implementation, this was a `sim` or `SimObject` object.
 /// This stores a `SimulationGrid` which has the wavefunction and its fourier transform.
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
-pub struct SimulationObject<T>
+pub struct SimulationObject<T, const K: usize, const S: usize>
 where
     T: Float + FloatingPoint,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint,
@@ -65,21 +65,21 @@ where
 {
 
     /// This has the wavefunction and its Fourier transform
-    pub grid: SimulationGrid<T>,
+    pub grid: SimulationGrid<T, K, S>,
 
     /// This has the simulation parameters
     pub parameters: SimulationParameters<T>,
 
 }
 
-impl<T> SimulationGrid<T>
+impl<T, const K: usize, const S: usize> SimulationGrid<T, K, S>
 where
     T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
  {
 
-    pub fn new<const K: usize, const S: usize>(
+    pub fn new(
         ψ: Array<Complex<T>>, 
     ) -> Self
     where
@@ -131,10 +131,6 @@ where
             sim_name, 
         }
     }
-
-    pub fn update(){
-
-    }
 }
 impl<U> Display for SimulationParameters<U>
 where
@@ -159,14 +155,14 @@ where
 
 
 
-impl<T> SimulationObject<T>
+impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
     T: Float + FloatingPoint + Display + FromPrimitive,
-    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating,
+    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>>,
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
 {
 
-    pub fn new<const K: usize, const S: usize>(
+    pub fn new(
         ψ: Array<Complex<T>>,
         n_grid: u32,
         axis_length: T,
@@ -179,7 +175,7 @@ where
     ) -> Self {
         
         // Construct components
-        let grid = SimulationGrid::new::<K, S>(ψ);
+        let grid = SimulationGrid::<T, K, S>::new(ψ);
         let parameters = SimulationParameters::<T>::new(
             n_grid,
             axis_length,
@@ -215,7 +211,7 @@ fn test_new_grid() {
     let ψ: Array<Complex<f32>> = Array::new(&values, dims);
 
     // Initialize grid
-    let _grid: SimulationGrid<f32> = SimulationGrid::<f32>::new::<K, S>(ψ);
+    let _grid: SimulationGrid<f32, K, S> = SimulationGrid::<f32, K, S>::new(ψ);
     //af_print!("ψ", grid.ψ);
     //af_print!("ψk", grid.ψk);
 }
