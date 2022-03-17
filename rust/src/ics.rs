@@ -12,7 +12,7 @@ pub fn cold_gauss<T, const K: usize, const S: usize>(
     mean: [T; 3],
     std: [T; 3],
     params: SimulationParameters<T>,
-) -> SimulationObject<T>
+) -> SimulationObject<T, K, S>
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>>+ HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T>,
@@ -128,7 +128,7 @@ fn test_cold_gauss_initialization() {
 
     // Create a Simulation Object using Gaussian parameters and
     // simulation parameters 
-    let sim: SimulationObject<T> = cold_gauss::<T, K, S>(
+    let sim: SimulationObject<T, K, S> = cold_gauss::<T, K, S>(
         mean,
         std,
         params

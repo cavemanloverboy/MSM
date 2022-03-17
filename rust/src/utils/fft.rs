@@ -1,12 +1,13 @@
 use arrayfire::*;
 use num::{Complex, Float, FromPrimitive};
+use crate::utils::error::MSMError;
 
 pub fn forward<T, const K: usize, const S: usize>(
     array: &Array<Complex<T>>
-) -> Result<Array<<Complex<T> as arrayfire::HasAfEnum>::ComplexOutType>, MSMError>
+) -> Result<Array<Complex<T>>, MSMError>
 where
     T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + FloatingPoint,
+    Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
 {
     // Compute dimension specific normalization factor
@@ -23,10 +24,10 @@ where
 
 pub fn inverse<T, const K: usize, const S: usize>(
     array: &Array<Complex<T>>
-)-> Result<Array<<Complex<T> as arrayfire::HasAfEnum>::ComplexOutType>, MSMError>
+)-> Result<Array<Complex<T>>, MSMError>
 where
     T: Float + FloatingPoint,
-    Complex<T>: HasAfEnum + FloatingPoint,
+    Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
 {
     // Compute dimension specific normalization factor
@@ -99,11 +100,6 @@ where
     }
 
     kgrid
-}
-
-#[derive(Debug)]
-pub enum MSMError {
-    InvalidNumDumensions(usize),
 }
 
 
