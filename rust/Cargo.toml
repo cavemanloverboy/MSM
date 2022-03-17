@@ -12,6 +12,10 @@ approx = "0.5.1"
 clap = { version = "3.1.6", features = ["derive"] }
 arrayfire = "3.7.4"
 num = "0.2.1"
+npy = "0.4"
+npy-derive = "0.4"
+ndarray = "0.15.4"
+ndarray-npy = "0.8.1"
 
 [features]
 c64 = []
