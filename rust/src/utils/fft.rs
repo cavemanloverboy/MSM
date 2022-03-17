@@ -102,6 +102,48 @@ where
     kgrid
 }
 
+/// This computes `k2 = sum(k_i^2)` on the grid
+pub fn inv_spec_grid<T, const K: usize, const S: usize>(
+    dx: T,
+    shape: (u64, u64, u64, u64)
+) -> Array<T>
+where
+    T: HasAfEnum + Float + FromPrimitive
+{
+    // Get kgrid and square
+    let kgrid_squared: Vec<T> = get_kgrid::<T, S>(dx)
+        .iter()
+        .map(|x| *x * *x)
+        .collect();
+
+
+    // Construct Array full of zeros
+    let values = vec![T::zero(); S.pow(K as u32)];
+    let dims = Dim4::new(&[shape.0, shape.1, shape.2, shape.3]);
+    let mut array = Array::new(&values, dims);
+
+    // Sum(k_i^2)
+    for i in 0..K {
+        
+        // Shape of broadcasting array
+        let mut bcast_shape = [1, 1, 1, 1];
+        bcast_shape[i] = S as u64;
+        let bcast_dims = Dim4::new(&bcast_shape);
+
+        // Construct brodcasting array
+        let bcast_array = Array::new(&kgrid_squared, bcast_dims);
+
+        // Add bcast_array to array
+        array = add(
+            &array,
+            &bcast_array,
+            false
+        )
+    }
+
+    array
+}
+
 
 
 

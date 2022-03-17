@@ -1,12 +1,15 @@
 use arrayfire::{
-    Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator,
+    Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4,
     mul, real, conjg, constant
 };
-use crate::utils::{
-    fft::{forward, inverse},
-    complex::complex_constant,
-    io,
-    error::MSMError,
+use crate::{
+    constants::POIS_CONST,
+    utils::{
+        fft::{forward, inverse, forward_inplace, inverse_inplace, inv_spec_grid},
+        complex::complex_constant,
+        io,
+        error::MSMError,
+    }
 };
 use conv::*;
 use std::fmt::Display;
@@ -200,8 +203,6 @@ where
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
     pub fn update(&mut self) {
 
-        // Compute density field
-        let ρ: Array<T> = self.get_density();
 
     }
 
@@ -215,13 +216,13 @@ where
         }
     }
 
-    /// This function computes the realspace density 
+    /// This function computes the space density 
     pub fn get_density(&self) -> Array<T> {
         let shape = self.get_shape().unwrap();
         mul(
-            &constant!(
-                    self.parameters.total_mass;
-                    shape.0, shape.1, shape.2, shape.3
+            &Array::new(
+                    &[self.parameters.total_mass],
+                    Dim4::new(&[1, 1, 1, 1])
             ),
             &real(
                 &mul(
@@ -230,9 +231,39 @@ where
                     false
                 )
             ),
-            false
+            true
         )
+    }
 
+    /// This function calculates the potential for the stream
+    pub fn calculate_potential(&self) -> Array<T> {
+
+        // Compute space density and perform inplace fft
+        let mut ρ: Array<Complex<T>> = self.get_density().cast();
+        forward_inplace::<T, K, S>(&mut ρ);
+
+        // Compute potential in k-space and perform inplace inverse fft
+        let mut φ: Array<Complex<T>> = mul(
+            &mul(
+                &Array::new(
+                    &[Complex::<T>::new(
+                        -T::from_f64(POIS_CONST).unwrap(),
+                        T::zero()
+                    )],
+                    Dim4::new(&[1,1,1,1])
+                ),
+                &ρ,
+                true
+            ),
+            &self.get_inv_spec_grid().cast(),
+            false
+        );
+        inverse_inplace::<T, K, S>(&mut φ);
+        real(&φ)
+    }
+
+    pub fn get_inv_spec_grid(&self) -> Array<T> {
+        inv_spec_grid::<T, K, S>(self.parameters.dx, self.get_shape().unwrap())
     }
 }
 
