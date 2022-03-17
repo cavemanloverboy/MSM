@@ -47,6 +47,7 @@ fn test_cold_gauss_sim_f32() {
     let axis_length: T = 1.0; 
     let time: T = 0.0;
     let total_sim_time: T = 1.0;
+    let dt: T = 0.1;
     let num_data_dumps: u32 = 100;
     let total_mass: T = 1.0;
     let particle_mass: T = 1e-6;
@@ -56,6 +57,7 @@ fn test_cold_gauss_sim_f32() {
         axis_length,
         time,
         total_sim_time,
+        dt,
         num_data_dumps,
         total_mass,
         particle_mass,

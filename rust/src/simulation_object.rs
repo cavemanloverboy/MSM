@@ -1,11 +1,11 @@
 use arrayfire::{
-    Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4,
-    mul, real, conjg, constant
+    Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
+    mul, real, conjg, constant, exp, max_all
 };
 use crate::{
-    constants::POIS_CONST,
+    constants::{POIS_CONST, HBAR},
     utils::{
-        fft::{forward, inverse, forward_inplace, inverse_inplace, inv_spec_grid},
+        fft::{forward, inverse, forward_inplace, inverse_inplace, inv_spec_grid, get_kgrid},
         complex::complex_constant,
         io,
         error::MSMError,
@@ -18,7 +18,7 @@ use num::{Complex, Float, FromPrimitive};
 /// This struct holds the grids which store the wavefunction and its Fourier transform
 pub struct SimulationGrid<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
     Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
@@ -52,6 +52,8 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
     pub total_sim_time: U,
     /// Number of data dumps
     pub num_data_dumps: u32,
+    /// Timestep
+    pub dt: U,
 
     // Physical Parameters
     /// Total Mass
@@ -69,7 +71,7 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
 pub struct SimulationObject<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
@@ -83,17 +85,13 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationGrid<T, K, S>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T>,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
  {
 
     pub fn new(
         ψ: Array<Complex<T>>, 
     ) -> Self
-    where
-        T: Float,
-        Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint,
-        <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
     {
         let ψk = forward::<T, K, S>(&ψ).expect("failed forward fft");
         SimulationGrid {
@@ -114,6 +112,7 @@ where
         axis_length: U,
         time: U,
         total_sim_time: U,
+        dt: U,
         num_data_dumps: u32,
         total_mass: U,
         particle_mass: U,
@@ -124,7 +123,7 @@ where
 
         // Overconstrained parameters 
         let dx = axis_length / U::from_u32(n_grid).unwrap();
-        let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / dx;
+        let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / axis_length;
 
         SimulationParameters {
             n_grid,
@@ -133,6 +132,7 @@ where
             dk,
             time,
             total_sim_time,
+            dt,
             num_data_dumps,
             total_mass,
             particle_mass,
@@ -165,8 +165,8 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T>,
-    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
+    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
 
     pub fn new(
@@ -175,6 +175,7 @@ where
         axis_length: T,
         time: T,
         total_sim_time: T,
+        dt: T,
         num_data_dumps: u32,
         total_mass: T,
         particle_mass: T,
@@ -188,6 +189,7 @@ where
             axis_length,
             time,
             total_sim_time,
+            dt,
             num_data_dumps,
             total_mass,
             particle_mass,
@@ -203,9 +205,49 @@ where
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
     pub fn update(&mut self) {
 
+        // Used throughout. TODO: perhaps make a field of SimulationGrid
+        let shape = self.get_shape().unwrap();
+
+        // Calculate potential
+        let φ: Array<T> = self.calculate_potential();
+        let v: Array<T> = mul(&φ, &constant!(self.parameters.particle_mass; shape.0, shape.1, shape.2, shape.3), false);
+
+        // Update spatial wavefunction half-step
+        // TODO: make cfl a sim param
+        let cfl = T::from_f64(0.25).unwrap();
+        let dt = cfl * self.get_timestep(&v);
+        let evolution: Array<Complex<T>> = exp(
+            &mul(
+                &complex_constant(Complex::<T>::new(T::zero(), -dt / T::from_f64(2.0 * HBAR).unwrap()), shape),
+                &v.cast(),
+                true
+            )
+        );
+        self.grid.ψ = mul(&self.grid.ψ, &evolution, false);
+
 
     }
 
+    /// This function computes the max timestep we can take, a constraint given by the minimum
+    /// of the maximum kinetic, potential timesteps such that the wavefunction phase moves by >=2pi.
+    pub fn get_timestep(&self, v: &Array<T>) -> T {
+
+        // Max kinetic
+        let kgrid_max: T = get_kgrid::<T, S>(self.parameters.dx)
+            .iter()
+            .fold(T::zero(), |acc, x| if *x > acc { *x } else { acc });
+        // Need to square and multiply by K to account for all k_i^2
+        let kinetic_max: T = T::from_usize(K).unwrap() * kgrid_max * kgrid_max
+            / (T::from_f64(2.0).unwrap() * self.parameters.particle_mass);
+        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (kinetic_max / T::from_f64(2.0).unwrap());
+
+        // Max potential  
+        let potential_max: T= max_all(&v).0;
+        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (potential_max / T::from_f64(2.0).unwrap());
+
+        kinetic_dt.min(potential_dt)
+    }
+    
     /// This function computes the shape of the grid
     pub fn get_shape(&self) -> Result<(u64, u64, u64, u64), MSMError> {
         match K {
@@ -262,6 +304,7 @@ where
         real(&φ)
     }
 
+    /// This function calculates 1/k^2 grid
     pub fn get_inv_spec_grid(&self) -> Array<T> {
         inv_spec_grid::<T, K, S>(self.parameters.dx, self.get_shape().unwrap())
     }
@@ -299,6 +342,7 @@ fn test_new_sim_parameters() {
     let axis_length: T = 1.0; 
     let time: T = 0.0;
     let total_sim_time: T = 1.0;
+    let dt: T = 1e-3;
     let num_data_dumps: u32 = 100;
     let total_mass: T = 1.0;
     let particle_mass: T = 1e-6;
@@ -309,6 +353,7 @@ fn test_new_sim_parameters() {
         axis_length,
         time,
         total_sim_time,
+        dt,
         num_data_dumps,
         total_mass,
         particle_mass,

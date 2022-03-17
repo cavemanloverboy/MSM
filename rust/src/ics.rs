@@ -14,8 +14,8 @@ pub fn cold_gauss<T, const K: usize, const S: usize>(
     params: SimulationParameters<T>,
 ) -> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T>,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
 {
 
     // Construct spatial grid
@@ -77,6 +77,7 @@ where
         params.axis_length,
         params.time,
         params.total_sim_time,
+        params.dt,
         params.num_data_dumps,
         params.total_mass,
         params.particle_mass,
@@ -109,6 +110,7 @@ fn test_cold_gauss_initialization() {
     let axis_length = 1.0;
     let time = 1.0;
     let total_sim_time = 1.0;
+    let dt = 0.1;
     let num_data_dumps = 100;
     let total_mass = 1.0;
     let particle_mass = 1.0;
@@ -118,6 +120,7 @@ fn test_cold_gauss_initialization() {
         axis_length,
         time,
         total_sim_time,
+        dt,
         num_data_dumps,
         total_mass,
         particle_mass,
