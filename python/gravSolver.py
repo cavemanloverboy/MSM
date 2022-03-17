@@ -22,6 +22,7 @@ class Grav3D(object):
 
         self.working = True
 
+
     def ColdGauss(self, m, s, N, L, dtype_ = 'complex64'):
         psiX = pyfftw.empty_aligned(N, dtype = dtype_)
         psiY = pyfftw.empty_aligned(N, dtype = dtype_)
@@ -92,17 +93,17 @@ class Grav3D(object):
         while(self.T < Tgoal):
             dt_ = np.min( [dt, Tgoal - self.T] )
 
-            rho_r = s.Mtot*(np.abs(self.psi))**2
-            phi_r = self.compute_phi(rho_r + 0j, s).real
-
-            Vr = phi_r*s.mpart
-
             # update position full-step
             fftObj = pyfftw.FFTW(self.psi, self.fft_out, axes = (0,1,2))
             psi_k = fftObj()
             psi_k *= np.exp(-1j*dt_*s.hbar*(s.spec_grid)/(4.*s.mpart))
             ifftObj = pyfftw.FFTW(psi_k, self.psi, axes = (0,1,2), direction = "FFTW_BACKWARD")
             self.psi = ifftObj()
+
+            rho_r = s.Mtot*(np.abs(self.psi))**2
+            phi_r = self.compute_phi(rho_r + 0j, s).real
+
+            Vr = phi_r*s.mpart
 
             # update momentum full-step
             self.psi *= np.exp(-1j*dt_*Vr/(s.hbar))
@@ -115,3 +116,36 @@ class Grav3D(object):
             self.psi = ifftObj()
 
             self.T += dt_
+        
+        self.CheckAlias(s)
+
+    def CheckAlias(self, s):
+        # we need to check a few aliasing effects
+
+        # there can be spectral aliasing whereby the min and max modes are identical
+        fftObj = pyfftw.FFTW(self.psi, self.fft_out, axes = (0,1,2))
+        psi_k = fftObj()
+        psi_k /= np.sqrt(np.sum((np.abs(psi_k)**2))) # now |psi_k|^2 sumed = 1
+
+        k_max = np.max(s.kx)
+        P_aliasing = np.sum(np.abs(psi_k[np.sqrt(s.spec_grid) > k_max*s.k_cutoff_frac])**2)
+
+        if P_aliasing > s.P_thresh:
+            self.working = False
+
+
+        # there can also be phase aliasing whereby the update aliases to a negative timestep because dt is too large
+        angle_k = s.dt*s.hbar*(k_max**2)/(4.*s.mpart)
+        
+        if angle_k > np.pi*2*s.cf:
+            s.dt = s.dt * np.pi*2*s.cf / angle_k
+        
+        rho_r = s.Mtot*(np.abs(self.psi))**2
+        phi_r = self.compute_phi(rho_r + 0j, s).real
+
+        Vr = np.max(phi_r*s.mpart)
+
+        angle_x = s.dt*Vr/(s.hbar)
+
+        if angle_x > np.pi*2*s.cf:
+            s.dt = s.dt * np.pi*2*s.cf / angle_x

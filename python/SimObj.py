@@ -39,6 +39,11 @@ class SimObj(object):
         s.ofile = None
         s.solvers = []
     
+        # aliasing info
+        self.k_cutoff_frac = None # the fraction of the maximum momentum for which
+        # momentum values above are considered in danger of spectral aliasing
+        self.P_thresh = .01 # how much of the total mass in the system can be above the k_cutoff
+        self.cf = .1 # the maximum amount of radians that a single timestep is allowed to update the phase of psi
 
 
     def MakeMetaFile(self, **kwargs):
