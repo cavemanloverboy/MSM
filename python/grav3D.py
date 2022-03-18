@@ -61,8 +61,8 @@ def remaining(done, total):
 # returns (hours, mins, secs) remaining
 def hms(T):
 	r = T
-	hrs = int(r)/(60*60)
-	mins = int(r%(60*60))/(60)
+	hrs = int(r)//(60*60)
+	mins = int(r%(60*60))//(60)
 	s = int(r%60)
 	return (hrs, mins, s)
 
@@ -86,8 +86,8 @@ def EndSim():
 	time.sleep(.1)
 	os.system('spd-say "program, %s, completed"'%(simName))
 
-	print '\ncompleted in %i hrs, %i mins, %i s' %hms(time.time()-s.time0)
-	print "output: ", simName
+	print('\ncompleted in %i hrs, %i mins, %i s' %hms(time.time()-s.time0))
+	print("output: ", simName)
 
 
 def DropData(i):
@@ -120,7 +120,7 @@ def compute_phi(rho_r):
 def update():
 
 		rho_r = Mtot*(np.abs(s.psi))**2
-		rho_r[N/2-1:N/2+1, N/2-1:N/2+1, N/2-1:N/2+1] += M_BH_frac*Mtot/8.
+		rho_r[N//2-1:N//2+1, N//2-1:N//2+1, N//2-1:N//2+1] += M_BH_frac*Mtot/8.
 		phi_r = compute_phi(rho_r + 0j).real
 		
 		Vr = phi_r*mpart

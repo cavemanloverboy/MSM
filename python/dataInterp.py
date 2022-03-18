@@ -52,7 +52,7 @@ def getMetaKno(name):
 	for line in f.readlines():
 		for key_ in metaParams.keys():
 			if key_ + ":" in line:
-				print line
+				print(line)
 				metaParams[key_] = re.findall(r"[-+]?\d*\.\d+|\d+", line)[0]
 
 	return metaParams
