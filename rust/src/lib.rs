@@ -85,9 +85,13 @@ pub fn run_simulation(_args: Vec<String>) {
 #[test]
 fn test_cold_gauss_sim_f32_order1() {
 
+    use arrayfire::{set_device, device_mem_info};
     use crate::simulation_object::*;
     use crate::ics;
     use std::time::Instant;
+
+    set_device(0);
+    println!("{:?}", device_mem_info());
 
     // Set size
     const K: usize = 3;
