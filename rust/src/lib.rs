@@ -36,7 +36,7 @@ fn test_cold_gauss_sim_f32() {
 
     // Set size
     const K: usize = 3;
-    const S: usize = 128;
+    const S: usize = 512;
     type T = f32;
 
     // Gaussian Parameters
@@ -81,8 +81,8 @@ fn test_cold_gauss_sim_f32() {
         // array_to_disk("img_slice", "coldgauss", &abs(&img_slice), slice_shape);
     }
 
-    while simulation_object.not_finished() {
-        simulation_object.update();
-    }
-    assert!(!!!simulation_object.not_finished())
+    // while simulation_object.not_finished() {
+    //     simulation_object.update();
+    // }
+    // assert!(!!!simulation_object.not_finished())
 }

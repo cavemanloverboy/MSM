@@ -1,6 +1,6 @@
 use arrayfire::{
     Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
-    mul, real, conjg, constant, exp, max_all, div, replace_scalar, isinf, min_all, bitnot
+    mul, real, conjg, constant, exp, max_all, div, replace_scalar, isinf, min_all, bitnot, sum_all
 };
 use crate::{
     constants::{POIS_CONST, HBAR},
@@ -212,7 +212,7 @@ where
         // Update spatial wavefunction half-step
         // TODO: make cfl a sim param
         // TODO: compare dt to 
-        let cfl = T::from_f64(0.8).unwrap();
+        let cfl = T::from_f64(0.1).unwrap();
         let dt = cfl * self.get_timestep(&v);
         let r_evolution: Array<Complex<T>> = exp(
             &mul(
@@ -337,9 +337,12 @@ where
         //let cond = bitnot(&isinf(&φ));
         println!("max/min of real part of potential in k prior to filter is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
         //replace_scalar(&mut φ, &cond, 0.0);
-        println!("max/min of real part of potential in k post-filter is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
+        println!("max/min of real part of potential in k post-filter is {} {}, num inf = {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0,
+            sum_all::<bool>(&isinf(&φ).cast()).0
+        );
 
-        inverse_inplace::<T, K, S>(&mut φ);
+        //inverse_inplace::<T, K, S>(&mut φ);
+        φ = inverse::<T, K, S>(&φ).unwrap();
         println!("max/min of real part of potential in k post-inv fft is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
         real(&φ)
     }
