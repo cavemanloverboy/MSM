@@ -67,7 +67,7 @@ def animate(i):
 	psi = np.load(fo.fileNames[i])
 	rho = float(fo.meta["Mtot"])*np.abs(psi)**2
 
-	ind_ = int(fo.meta["N"])/2
+	ind_ = int(fo.meta["N"])//2
 
 	fo.imXP.set_array(rho.sum(axis=0))
 	fo.imYP.set_array(rho.sum(axis=1))
