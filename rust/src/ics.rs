@@ -1,6 +1,9 @@
 use crate::{
     simulation_object::*,
-    utils::grid::{normalize, check_norm},
+    utils::{
+        grid::{normalize, check_norm},
+        io::array_to_disk,   
+    },
 };
 use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, Fromf64, ConstGenerator};
 use num::{Complex, Float, FromPrimitive};
@@ -11,10 +14,10 @@ use std::iter::Iterator;
 pub fn cold_gauss<T, const K: usize, const S: usize>(
     mean: [T; 3],
     std: [T; 3],
-    params: SimulationParameters<T>,
+    params: SimulationParameters<T, S>,
 ) -> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
 {
 
@@ -35,6 +38,7 @@ where
     }
     let x_dims = Dim4::new(&[S as u64, 1, 1, 1]);
     let mut ψx: Array<Complex<T>> = Array::new(&ψx_values, x_dims);
+    array_to_disk("x", "x", &arrayfire::abs(&ψx), [S as u64, 1, 1, 1]);
     normalize::<T, K>(&mut ψx, params.dx);
     debug_assert!(check_norm::<T, K>(&ψx, params.dx));
 
@@ -73,11 +77,10 @@ where
     debug_assert!(check_norm::<T, K>(&ψ, params.dx));
     SimulationObject::<T, K, S>::new(
         ψ,
-        params.n_grid,
         params.axis_length,
         params.time,
         params.total_sim_time,
-        params.dt,
+        params.cfl,
         params.num_data_dumps,
         params.total_mass,
         params.particle_mass,
@@ -106,21 +109,19 @@ fn test_cold_gauss_initialization() {
     // Simulation parameters
     const K: usize = 3;
     const S: usize = 128;
-    let n_grid = S as u32;
     let axis_length = 1.0;
     let time = 1.0;
     let total_sim_time = 1.0;
-    let dt = 0.1;
+    let cfl = 0.25;
     let num_data_dumps = 100;
     let total_mass = 1.0;
     let particle_mass = 1.0;
     let sim_name = "cold-gauss";
-    let params = SimulationParameters::<T>::new(
-        n_grid,
+    let params = SimulationParameters::<T, S>::new(
         axis_length,
         time,
         total_sim_time,
-        dt,
+        cfl,
         num_data_dumps,
         total_mass,
         particle_mass,

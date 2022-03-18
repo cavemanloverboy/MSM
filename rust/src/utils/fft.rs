@@ -18,7 +18,7 @@ where
         1 => Ok( fft(array, norm_factor, S as i64)),
         2 => Ok(fft2(array, norm_factor, S as i64, S as i64)),
         3 => Ok(fft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(MSMError::InvalidNumDumensions(S))
+        _ => Err(MSMError::InvalidNumDumensions(K))
     }
 }
 
@@ -38,7 +38,7 @@ where
         1 => Ok( ifft(array, norm_factor, S as i64)),
         2 => Ok(ifft2(array, norm_factor, S as i64, S as i64)),
         3 => Ok(ifft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(MSMError::InvalidNumDumensions(S))
+        _ => Err(MSMError::InvalidNumDumensions(K))
     }
 }
 
@@ -55,7 +55,7 @@ where
         1 => Ok( fft_inplace(array, norm_factor)),
         2 => Ok(fft2_inplace(array, norm_factor)),
         3 => Ok(fft3_inplace(array, norm_factor)),
-        _ => Err(MSMError::InvalidNumDumensions(S))
+        _ => Err(MSMError::InvalidNumDumensions(K))
     }
 }
 
@@ -72,7 +72,7 @@ where
         1 => Ok( ifft_inplace(array, norm_factor)),
         2 => Ok(ifft2_inplace(array, norm_factor)),
         3 => Ok(ifft3_inplace(array, norm_factor)),
-        _ => Err(MSMError::InvalidNumDumensions(S))
+        _ => Err(MSMError::InvalidNumDumensions(K))
     }
 }
 
@@ -103,7 +103,7 @@ where
 }
 
 /// This computes `k2 = sum(k_i^2)` on the grid
-pub fn inv_spec_grid<T, const K: usize, const S: usize>(
+pub fn spec_grid<T, const K: usize, const S: usize>(
     dx: T,
     shape: (u64, u64, u64, u64)
 ) -> Array<T>
@@ -137,7 +137,7 @@ where
         array = add(
             &array,
             &bcast_array,
-            false
+            true
         )
     }
 

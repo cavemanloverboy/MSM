@@ -1,11 +1,11 @@
 use arrayfire::{
     Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
-    mul, real, conjg, constant, exp, max_all
+    mul, real, conjg, constant, exp, max_all, div, replace_scalar, isinf, min_all, bitnot
 };
 use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
-        fft::{forward, inverse, forward_inplace, inverse_inplace, inv_spec_grid, get_kgrid},
+        fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid, get_kgrid},
         complex::complex_constant,
         io,
         error::MSMError,
@@ -14,6 +14,7 @@ use crate::{
 use conv::*;
 use std::fmt::Display;
 use num::{Complex, Float, FromPrimitive};
+use std::time::Instant;
 
 /// This struct holds the grids which store the wavefunction and its Fourier transform
 pub struct SimulationGrid<T, const K: usize, const S: usize>
@@ -33,11 +34,9 @@ where
 
 
 /// This `Parameters` struct stores simulations parameters
-pub struct SimulationParameters<U: Float + FloatingPoint> {
+pub struct SimulationParameters<U: Float + FloatingPoint, const S: usize> {
 
     // Grid Parameters
-    /// Number of pixels per axis
-    pub n_grid: u32,
     /// Physical length of each axis
     pub axis_length: U,
     /// Spatial cell size
@@ -52,8 +51,8 @@ pub struct SimulationParameters<U: Float + FloatingPoint> {
     pub total_sim_time: U,
     /// Number of data dumps
     pub num_data_dumps: u32,
-    /// Timestep
-    pub dt: U,
+    /// Timestep Criterion
+    pub cfl: U,
 
     // Physical Parameters
     /// Total Mass
@@ -79,7 +78,7 @@ where
     pub grid: SimulationGrid<T, K, S>,
 
     /// This has the simulation parameters
-    pub parameters: SimulationParameters<T>,
+    pub parameters: SimulationParameters<T, S>,
 
 }
 
@@ -102,17 +101,16 @@ where
 
 }
 
-impl<U> SimulationParameters<U>
+impl<U, const S: usize> SimulationParameters<U, S>
 where
     U: FromPrimitive + Float + FloatingPoint + Display
 {
 
     pub fn new(
-        n_grid: u32,
         axis_length: U,
         time: U,
         total_sim_time: U,
-        dt: U,
+        cfl: U,
         num_data_dumps: u32,
         total_mass: U,
         particle_mass: U,
@@ -122,17 +120,16 @@ where
     {
 
         // Overconstrained parameters 
-        let dx = axis_length / U::from_u32(n_grid).unwrap();
+        let dx = axis_length / U::from_usize(S).unwrap();
         let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / axis_length;
 
         SimulationParameters {
-            n_grid,
             axis_length,
             dx,
             dk,
             time,
             total_sim_time,
-            dt,
+            cfl,
             num_data_dumps,
             total_mass,
             particle_mass,
@@ -140,18 +137,18 @@ where
         }
     }
 }
-impl<U> Display for SimulationParameters<U>
+impl<U, const S: usize> Display for SimulationParameters<U, S>
 where
     U: ValueFrom<u32> + ValueFrom<f64> + Float + FloatingPoint + Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}\n","-".repeat(40))?;
-        write!(f, "n_grid         = {}\n", self.n_grid)?;
         write!(f, "axis_length    = {}\n", self.axis_length)?;
         write!(f, "dx             = {}\n", self.dx)?;
         write!(f, "dk             = {}\n", self.dk)?;
         write!(f, "current_time   = {}\n", self.time)?;
         write!(f, "total_sim_time = {}\n", self.total_sim_time)?;
+        write!(f, "cfl            = {}\n", self.cfl)?;
         write!(f, "num_data_dumps = {}\n", self.num_data_dumps)?;
         write!(f, "total_mass     = {}\n", self.total_mass)?;
         write!(f, "particle_mass  = {}\n", self.particle_mass)?;
@@ -171,11 +168,10 @@ where
 
     pub fn new(
         ψ: Array<Complex<T>>,
-        n_grid: u32,
         axis_length: T,
         time: T,
         total_sim_time: T,
-        dt: T,
+        cfl: T,
         num_data_dumps: u32,
         total_mass: T,
         particle_mass: T,
@@ -184,12 +180,11 @@ where
         
         // Construct components
         let grid = SimulationGrid::<T, K, S>::new(ψ);
-        let parameters = SimulationParameters::<T>::new(
-            n_grid,
+        let parameters = SimulationParameters::<T, S>::new(
             axis_length,
             time,
             total_sim_time,
-            dt,
+            cfl,
             num_data_dumps,
             total_mass,
             particle_mass,
@@ -204,28 +199,47 @@ where
 
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
     pub fn update(&mut self) {
+        let now = Instant::now();
 
         // Used throughout. TODO: perhaps make a field of SimulationGrid
         let shape = self.get_shape().unwrap();
 
         // Calculate potential
         let φ: Array<T> = self.calculate_potential();
+        println!("max/min of potential in spatial is {} {}", max_all(&φ).0, min_all(&φ).0);
         let v: Array<T> = mul(&φ, &constant!(self.parameters.particle_mass; shape.0, shape.1, shape.2, shape.3), false);
 
         // Update spatial wavefunction half-step
         // TODO: make cfl a sim param
-        let cfl = T::from_f64(0.25).unwrap();
+        // TODO: compare dt to 
+        let cfl = T::from_f64(0.8).unwrap();
         let dt = cfl * self.get_timestep(&v);
-        let evolution: Array<Complex<T>> = exp(
+        let r_evolution: Array<Complex<T>> = exp(
             &mul(
-                &complex_constant(Complex::<T>::new(T::zero(), -dt / T::from_f64(2.0 * HBAR).unwrap()), shape),
+                &complex_constant(Complex::<T>::new(T::zero(), -(dt / T::from_f64(2.0).unwrap()) / T::from_f64(2.0 * HBAR).unwrap()), shape),
                 &v.cast(),
                 true
             )
         );
-        self.grid.ψ = mul(&self.grid.ψ, &evolution, false);
+        self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
 
+        // Update momentum full-step
+        self.grid.ψk = forward::<T, K, S>(&self.grid.ψ).unwrap();
+        let k_evolution: Array<Complex<T>> = exp(
+            &div(
+                &complex_constant(Complex::<T>::new(T::zero(), -(dt / (T::from_f64(2.0 / HBAR).unwrap() * self.parameters.particle_mass)) / T::from_f64(2.0 * HBAR).unwrap()), shape),
+                &self.get_spec_grid().cast(),
+                true
+            )
+        );
+        self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
+        self.grid.ψ = forward::<T, K, S>(&self.grid.ψk).unwrap();
 
+        // Update position half-step
+        self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
+        self.parameters.time = self.parameters.time + dt;
+
+        println!("update took {} millis, current sim time is {}, dt is {}", now.elapsed().as_millis(), self.parameters.time, dt);
     }
 
     /// This function computes the max timestep we can take, a constraint given by the minimum
@@ -239,12 +253,15 @@ where
         // Need to square and multiply by K to account for all k_i^2
         let kinetic_max: T = T::from_usize(K).unwrap() * kgrid_max * kgrid_max
             / (T::from_f64(2.0).unwrap() * self.parameters.particle_mass);
-        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (kinetic_max / T::from_f64(2.0).unwrap());
+        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (kinetic_max);
 
         // Max potential  
-        let potential_max: T= max_all(&v).0;
-        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (potential_max / T::from_f64(2.0).unwrap());
+        let potential_max: T = max_all(&v).0;
+        let potential_min: T = min_all(&v).0;
+        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (potential_max);
 
+        println!("kinetic_max = {}, potential_max, min = {}, {}", kinetic_max, potential_max, potential_min);
+        println!("kinetic_dt = {}, potential_dt = {}", kinetic_dt, potential_dt);
         kinetic_dt.min(potential_dt)
     }
     
@@ -260,8 +277,8 @@ where
 
     /// This function computes the space density 
     pub fn get_density(&self) -> Array<T> {
-        let shape = self.get_shape().unwrap();
-        mul(
+
+        let rho = mul(
             &Array::new(
                     &[self.parameters.total_mass],
                     Dim4::new(&[1, 1, 1, 1])
@@ -274,18 +291,28 @@ where
                 )
             ),
             true
-        )
+        );
+        println!("max/min of density is {} {}, mass is {}, max of psi sq is {}", max_all(&rho).0, min_all(&rho).0, self.parameters.total_mass, max_all(&real(
+            &mul(
+                &self.grid.ψ,
+                &conjg(&self.grid.ψ),
+                false
+            )
+            )).0);
+        rho
     }
 
     /// This function calculates the potential for the stream
     pub fn calculate_potential(&self) -> Array<T> {
+
+        let shape = self.get_shape().unwrap();
 
         // Compute space density and perform inplace fft
         let mut ρ: Array<Complex<T>> = self.get_density().cast();
         forward_inplace::<T, K, S>(&mut ρ);
 
         // Compute potential in k-space and perform inplace inverse fft
-        let mut φ: Array<Complex<T>> = mul(
+        let mut φ: Array<Complex<T>> = div(
             &mul(
                 &Array::new(
                     &[Complex::<T>::new(
@@ -297,16 +324,34 @@ where
                 &ρ,
                 true
             ),
-            &self.get_inv_spec_grid().cast(),
+            &self.get_spec_grid().cast(),
             false
         );
+        // {
+        //     // mask item 0,0,0,0
+        //     let mut mask = vec![T::one(); S.pow(K as u32)];
+        //     mask[0] = T::zero();
+        //     let mask = Array::new(&mask, Dim4::new(&[shape.0, shape.1, shape.2, shape.3]));
+        //     φ = mul(&φ, &mask.cast(), false);
+        // }
+        //let cond = bitnot(&isinf(&φ));
+        println!("max/min of real part of potential in k prior to filter is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
+        //replace_scalar(&mut φ, &cond, 0.0);
+        println!("max/min of real part of potential in k post-filter is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
+
         inverse_inplace::<T, K, S>(&mut φ);
+        println!("max/min of real part of potential in k post-inv fft is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
         real(&φ)
     }
 
-    /// This function calculates 1/k^2 grid
-    pub fn get_inv_spec_grid(&self) -> Array<T> {
-        inv_spec_grid::<T, K, S>(self.parameters.dx, self.get_shape().unwrap())
+    /// This function calculates k^2 grid
+    pub fn get_spec_grid(&self) -> Array<T> {
+        spec_grid::<T, K, S>(self.parameters.dx, self.get_shape().unwrap())
+    }
+
+    /// This function checks if simulation is done
+    pub fn not_finished(&self) -> bool {
+        self.parameters.time < self.parameters.total_sim_time
     }
 }
 
@@ -336,24 +381,23 @@ fn test_new_grid() {
 #[test]
 fn test_new_sim_parameters() {
 
+    const S: usize = 16;
     type T = f64;
 
-    let n_grid: u32 = 16;
     let axis_length: T = 1.0; 
     let time: T = 0.0;
     let total_sim_time: T = 1.0;
-    let dt: T = 1e-3;
+    let cfl: T = 0.25;
     let num_data_dumps: u32 = 100;
     let total_mass: T = 1.0;
-    let particle_mass: T = 1e-6;
+    let particle_mass: T = 1e-12;
     let sim_name: &'static str = "my-sim";
 
-    let params = SimulationParameters::new(
-        n_grid,
+    let params = SimulationParameters::<T,S>::new(
         axis_length,
         time,
         total_sim_time,
-        dt,
+        cfl,
         num_data_dumps,
         total_mass,
         particle_mass,
