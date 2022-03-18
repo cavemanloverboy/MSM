@@ -36,7 +36,7 @@ fn test_cold_gauss_sim_f32() {
 
     // Set size
     const K: usize = 3;
-    const S: usize = 4;
+    const S: usize = 128;
     type T = f32;
 
     // Gaussian Parameters
@@ -44,13 +44,13 @@ fn test_cold_gauss_sim_f32() {
     let std: [T; 3] = [0.2; 3];
 
     // Simulation Parameters
-    let axis_length: T = 1.0; 
+    let axis_length: T = 60.0; 
     let time: T = 0.0;
-    let total_sim_time: T = 1.0;
-    let cfl: T = 0.1;
-    let num_data_dumps: u32 = 100;
-    let total_mass: T = 1.0;
-    let particle_mass: T = 1e-6;
+    let total_sim_time: T = 500000.0;
+    let cfl: T = 0.85;
+    let num_data_dumps: u32 = 200;
+    let total_mass: T = 1e12;
+    let particle_mass: T = (1e-22)*9.0e-67;
     let sim_name: &'static str = "cold-gauss";
     let params = SimulationParameters::<T, S>::new(
         axis_length,
@@ -71,8 +71,13 @@ fn test_cold_gauss_sim_f32() {
         params,
     );
 
+    use indicatif::ProgressBar;
+    let pb = ProgressBar::new(1000);
+    use num::FromPrimitive;
+    let mut tracker = 0;
     while simulation_object.not_finished() {
         simulation_object.update();
+        //pb.inc(u64::from_f64().unwrap());
     }
     assert!(!!!simulation_object.not_finished())
 }

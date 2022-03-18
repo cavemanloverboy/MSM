@@ -49,8 +49,10 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const S: usize> {
     pub time: U,
     /// Total simulation time
     pub total_sim_time: U,
-    /// Number of data dumps
+    /// Total number of data dumps
     pub num_data_dumps: u32,
+    /// Current number of data dumps
+    pub current_dumps: u32,
     /// Timestep Criterion
     pub cfl: U,
 
@@ -122,6 +124,7 @@ where
         // Overconstrained parameters 
         let dx = axis_length / U::from_usize(S).unwrap();
         let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / axis_length;
+        let current_dumps = 0;
 
         SimulationParameters {
             axis_length,
@@ -131,6 +134,7 @@ where
             total_sim_time,
             cfl,
             num_data_dumps,
+            current_dumps,
             total_mass,
             particle_mass,
             sim_name, 
@@ -208,10 +212,12 @@ where
         let φ: Array<T> = self.calculate_potential();
         let v: Array<T> = mul(&φ, &constant!(self.parameters.particle_mass; shape.0, shape.1, shape.2, shape.3), false);
 
+
+        // Compute timestep
+        let (dump, dt) = self.get_timestep(&v);
+
         // Update spatial wavefunction half-step
-        // TODO: make cfl a sim param
         // TODO: compare dt to 
-        let dt = self.parameters.cfl * self.get_timestep(&v);
         let r_evolution: Array<Complex<T>> = exp(
             &mul(
                 &complex_constant(Complex::<T>::new(T::zero(), -(dt / T::from_f64(2.0).unwrap()) / T::from_f64(2.0 * HBAR).unwrap()), shape),
@@ -237,12 +243,22 @@ where
         self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
         self.parameters.time = self.parameters.time + dt;
 
+        //let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.total_sim_time - self.parameters.time)/dt)).unwrap();
+        //println!("update took {} millis, current sim time is {}, dt is {}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
         println!("update took {} millis, current sim time is {}, dt is {}", now.elapsed().as_millis(), self.parameters.time, dt);
+
+        if dump {
+            self.dump();
+            self.parameters.current_dumps = self.parameters.current_dumps + 1;
+        }
+
+        // estimate of time left
+        
     }
 
     /// This function computes the max timestep we can take, a constraint given by the minimum
     /// of the maximum kinetic, potential timesteps such that the wavefunction phase moves by >=2pi.
-    pub fn get_timestep(&self, v: &Array<T>) -> T {
+    pub fn get_timestep(&self, v: &Array<T>) -> (bool, T) {
 
         // Max kinetic
         let kgrid_max: T = get_kgrid::<T, S>(self.parameters.dx)
@@ -251,14 +267,33 @@ where
         // Need to square and multiply by K to account for all k_i^2
         let kinetic_max: T = T::from_usize(K).unwrap() * kgrid_max * kgrid_max
             / (T::from_f64(2.0).unwrap() * self.parameters.particle_mass);
-        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (kinetic_max);
+        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI / HBAR).unwrap() / (kinetic_max);
 
         // Max potential  
         let potential_max: T = max_all(&v).0;
-        let potential_min: T = min_all(&v).0;
-        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (potential_max);
+        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI * HBAR).unwrap() / (potential_max);
 
-        kinetic_dt.min(potential_dt)
+        let time_to_next_dump = {
+            let mut t = T::zero();
+            while t < self.parameters.time {
+                t = t + self.parameters.total_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
+            }
+            t - self.parameters.time
+        };
+
+
+        // least of three
+        let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
+
+        let mut dump = false;
+        if dt == time_to_next_dump {
+            dump = true;
+        } else if dt == kinetic_dt {
+            println!("using kinetic {}", kinetic_dt);
+        } else{
+            println!("using potential {}, potential max is {}", potential_dt, potential_max);
+        }
+        (dump, dt)
     }
     
     /// This function computes the shape of the grid
@@ -323,6 +358,12 @@ where
 
         inverse_inplace::<T, K, S>(&mut φ);
         real(&φ)
+    }
+
+    /// This function writes out the wavefunction and metadata to disk
+    pub fn dump(&self) {
+
+        //
     }
 
     /// This function calculates k^2 grid
