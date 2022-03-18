@@ -1,6 +1,6 @@
 use arrayfire::{
     Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
-    mul, real, conjg, constant, exp, max_all, div, replace_scalar, isinf, min_all, bitnot, sum_all
+    mul, real, conjg, constant, exp, max_all, div, replace_scalar, isnan, min_all, bitnot, sum_all
 };
 use crate::{
     constants::{POIS_CONST, HBAR},
@@ -162,7 +162,7 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
     Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
 
@@ -206,14 +206,12 @@ where
 
         // Calculate potential
         let φ: Array<T> = self.calculate_potential();
-        println!("max/min of potential in spatial is {} {}", max_all(&φ).0, min_all(&φ).0);
         let v: Array<T> = mul(&φ, &constant!(self.parameters.particle_mass; shape.0, shape.1, shape.2, shape.3), false);
 
         // Update spatial wavefunction half-step
         // TODO: make cfl a sim param
         // TODO: compare dt to 
-        let cfl = T::from_f64(0.1).unwrap();
-        let dt = cfl * self.get_timestep(&v);
+        let dt = self.parameters.cfl * self.get_timestep(&v);
         let r_evolution: Array<Complex<T>> = exp(
             &mul(
                 &complex_constant(Complex::<T>::new(T::zero(), -(dt / T::from_f64(2.0).unwrap()) / T::from_f64(2.0 * HBAR).unwrap()), shape),
@@ -226,14 +224,14 @@ where
         // Update momentum full-step
         self.grid.ψk = forward::<T, K, S>(&self.grid.ψ).unwrap();
         let k_evolution: Array<Complex<T>> = exp(
-            &div(
+            &mul(
                 &complex_constant(Complex::<T>::new(T::zero(), -(dt / (T::from_f64(2.0 / HBAR).unwrap() * self.parameters.particle_mass)) / T::from_f64(2.0 * HBAR).unwrap()), shape),
                 &self.get_spec_grid().cast(),
                 true
             )
         );
         self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
-        self.grid.ψ = forward::<T, K, S>(&self.grid.ψk).unwrap();
+        self.grid.ψ = inverse::<T, K, S>(&self.grid.ψk).unwrap();
 
         // Update position half-step
         self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
@@ -260,8 +258,6 @@ where
         let potential_min: T = min_all(&v).0;
         let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (potential_max);
 
-        println!("kinetic_max = {}, potential_max, min = {}, {}", kinetic_max, potential_max, potential_min);
-        println!("kinetic_dt = {}, potential_dt = {}", kinetic_dt, potential_dt);
         kinetic_dt.min(potential_dt)
     }
     
@@ -292,13 +288,6 @@ where
             ),
             true
         );
-        println!("max/min of density is {} {}, mass is {}, max of psi sq is {}", max_all(&rho).0, min_all(&rho).0, self.parameters.total_mass, max_all(&real(
-            &mul(
-                &self.grid.ψ,
-                &conjg(&self.grid.ψ),
-                false
-            )
-            )).0);
         rho
     }
 
@@ -327,23 +316,12 @@ where
             &self.get_spec_grid().cast(),
             false
         );
-        // {
-        //     // mask item 0,0,0,0
-        //     let mut mask = vec![T::one(); S.pow(K as u32)];
-        //     mask[0] = T::zero();
-        //     let mask = Array::new(&mask, Dim4::new(&[shape.0, shape.1, shape.2, shape.3]));
-        //     φ = mul(&φ, &mask.cast(), false);
-        // }
-        //let cond = bitnot(&isinf(&φ));
-        println!("max/min of real part of potential in k prior to filter is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
-        //replace_scalar(&mut φ, &cond, 0.0);
-        println!("max/min of real part of potential in k post-filter is {} {}, num inf = {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0,
-            sum_all::<bool>(&isinf(&φ).cast()).0
-        );
+        let cond = isnan(&φ);
+        let value = [false];
+        let cond: Array<bool> = arrayfire::eq(&cond, &Array::new(&value, Dim4::new(&[1,1,1,1])), true);
+        replace_scalar(&mut φ, &cond, 0.0);
 
-        //inverse_inplace::<T, K, S>(&mut φ);
-        φ = inverse::<T, K, S>(&φ).unwrap();
-        println!("max/min of real part of potential in k post-inv fft is {} {}", max_all::<T>(&real(&φ).cast()).0, min_all::<T>(&real(&φ).cast()).0);
+        inverse_inplace::<T, K, S>(&mut φ);
         real(&φ)
     }
 
