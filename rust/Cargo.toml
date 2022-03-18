@@ -16,6 +16,7 @@ npy = "0.4"
 npy-derive = "0.4"
 ndarray = "0.15.4"
 ndarray-npy = "0.8.1"
+indicatif = "0.16.2"
 
 [features]
 c64 = []

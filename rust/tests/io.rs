@@ -25,7 +25,6 @@ fn test_io() {
     // Build nd_array for npy serialization
     let host: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(host);
     let host = host.into_shape(array_to_tuple(shape)).unwrap();
-    println!("host shape is now {:?}", host.shape());
 
     // Write to npz
     use ndarray_npy::NpzWriter;
@@ -44,9 +43,6 @@ fn test_io() {
     std::fs::File::open("data.npy").unwrap()
         .read_to_end(&mut buf).unwrap();
     let data: NpyData<T> = NpyData::from_bytes(&buf).unwrap();
-    for arr in data {
-        eprintln!("{:?}", arr);
-    }
 }
 
 #[test]
