@@ -15,20 +15,32 @@ where
     T: Float + HasAfEnum + WritableElement,
     Complex<T>: HasAfEnum,
 {
-     // Host array
-     let mut host = vec![T::zero(); 2*array.elements()];
-     array.host(&mut host);
+    // Host array
+    let mut host = vec![Complex::<T>::new(T::zero(), T::zero()); array.elements()];
+    array.host(&mut host);
+    let real: Vec<T> = host
+        .iter()
+        .map(|x| x.re)
+        .collect();
+    let imag: Vec<T> = host
+        .iter()
+        .map(|x| x.im)
+        .collect();
+    
  
      // Build nd_array for npy serialization
-     let host: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(host);
-     let host = host.into_shape(array_to_tuple(shape)).unwrap();
-     println!("host shape is now {:?}", host.shape());
+     let real: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(real);
+     let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
+     let real = real.into_shape(array_to_tuple(shape)).unwrap();
+     let imag = imag.into_shape(array_to_tuple(shape)).unwrap();
+     println!("host shape is now {:?}", real.shape());
  
      // Write to npz
      use ndarray_npy::NpzWriter;
      use std::fs::File;
      let mut npz = NpzWriter::new(File::create(path).unwrap());
-     npz.add_array(name, &host);
+     npz.add_array("real", &real);
+     //npz.add_array("imag", &imag);
      npz.finish();
      Ok(())
 }

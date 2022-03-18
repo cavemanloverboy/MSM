@@ -151,8 +151,31 @@ where
 
 #[test]
 fn test_k_grid() {
-
     // Generate simple k grid and ensure it's correct
     let k_grid = get_kgrid::<f32, 4>(0.25);
     assert_eq!(k_grid, [0.0, 1.0, -2.0, -1.0])
+}
+
+#[test]
+fn test_spec_grid() {
+    const S: usize = 4;
+    // Generate simple k grid and ensure it's correct
+    let k_grid = get_kgrid::<f32, S>(0.25);
+    let spec_grid = spec_grid::<f32, 3, S>(0.25, (S as u64, S as u64, S as u64, 1));
+
+    // Manually build array
+    let mut values = [0.0; S*S*S];
+    for i in 0..S {
+        for j in 0..S{
+            for k in 0..S {
+                let q = i + j*S + k*S*S;
+                values[q] = k_grid[i]*k_grid[i] + k_grid[j]*k_grid[j] + k_grid[k]*k_grid[k];
+            }
+        }
+    }
+    //let array = Array::new(&values, Dim4::new(&[S as u64, S as u64, S as u64, 1]));
+
+    let mut host = [0.0_f32; S*S*S];
+    spec_grid.host(&mut host);
+    assert_eq!(values, host)
 }
