@@ -40,7 +40,7 @@ where
      use std::fs::File;
      let mut npz = NpzWriter::new(File::create(path).unwrap());
      npz.add_array("real", &real);
-     //npz.add_array("imag", &imag);
+     npz.add_array("imag", &imag);
      npz.finish();
      Ok(())
 }

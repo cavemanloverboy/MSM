@@ -17,7 +17,7 @@ pub fn cold_gauss<T, const K: usize, const S: usize>(
     params: SimulationParameters<T, S>,
 ) -> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
 {
 

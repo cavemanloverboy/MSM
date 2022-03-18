@@ -1,8 +1,9 @@
 
-use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, Fromf64, ComplexFloating};
+use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, isnan, isinf, Fromf64, ComplexFloating};
 use num::{Float, Complex, FromPrimitive, ToPrimitive};
 use std::fmt::Display;
 use approx::{assert_abs_diff_eq};
+use crate::utils::error::MSMError;
 
 
 pub fn normalize<T, const K: usize>(
@@ -55,6 +56,54 @@ where
         1.0,
         epsilon = 1e-6);
     (norm.0*dx.powf(T::from_usize(K).unwrap()) - T::one()).abs() < T::from_f64(1e-6).unwrap()
+}
+
+
+
+pub fn check_complex_for_nans<T>(
+    array: &Array<Complex<T>>
+)-> bool
+where
+    T: Float + HasAfEnum + Fromf64 + std::fmt::Display,
+    Complex<T>: HasAfEnum + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T>,
+{
+    // check for nans
+    let check: Array<bool> = isnan(&array);
+    let nan_sum = sum_all(&check);
+    let is_nan = (nan_sum.0 + nan_sum.1) > 0;
+
+    // check for infs
+    let check: Array<bool> = isinf(&array);
+    let inf_sum = sum_all(&check);
+    let is_inf = (inf_sum.0 + inf_sum.0) > 0;
+
+    let is_bad = is_nan || is_inf;
+
+
+    println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
+    !is_bad
+}
+
+pub fn check_for_nans<T>(
+    array: &Array<T>
+)-> bool
+where
+    T: Float + HasAfEnum + Fromf64 + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T>,
+{
+    // check for nans
+    let check: Array<bool> = isnan(&array);
+    let nan_sum = sum_all(&check);
+    let is_nan = (nan_sum.0 + nan_sum.1) > 0;
+
+    // check for infs
+    let check: Array<bool> = isinf(&array);
+    let inf_sum = sum_all(&check);
+    let is_inf = (inf_sum.0 + inf_sum.0) > 0;
+
+    let is_bad = is_nan || is_inf;
+
+    println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
+    !is_bad
 }
 
 
@@ -283,3 +332,5 @@ fn test_normalize_arrayfire_array_3d_f64() {
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
     assert!(check_norm::<T, K>(&array, dx));
 }
+
+

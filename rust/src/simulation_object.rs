@@ -5,9 +5,10 @@ use arrayfire::{
 use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
+        grid::{check_complex_for_nans, check_for_nans},
         fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid, get_kgrid},
         complex::complex_constant,
-        io,
+        io::{array_to_disk, complex_array_to_disk},
         error::MSMError,
     }
 };
@@ -166,8 +167,8 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
-    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
+    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
+    Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T> + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
 
     pub fn new(
@@ -210,8 +211,10 @@ where
 
         // Calculate potential
         let φ: Array<T> = self.calculate_potential();
+        debug_assert!(check_for_nans(&φ));
         let v: Array<T> = mul(&φ, &constant!(self.parameters.particle_mass; shape.0, shape.1, shape.2, shape.3), false);
-
+        debug_assert!(check_for_nans(&v));
+        //arrayfire::af_print!("v", v);
 
         // Compute timestep
         let (dump, dt) = self.get_timestep(&v);
@@ -226,9 +229,11 @@ where
             )
         );
         self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
+        debug_assert!(check_complex_for_nans(&self.grid.ψ));
 
         // Update momentum full-step
         self.grid.ψk = forward::<T, K, S>(&self.grid.ψ).unwrap();
+        debug_assert!(check_complex_for_nans(&self.grid.ψk));
         let k_evolution: Array<Complex<T>> = exp(
             &mul(
                 &complex_constant(Complex::<T>::new(T::zero(), -(dt / (T::from_f64(2.0 / HBAR).unwrap() * self.parameters.particle_mass)) / T::from_f64(2.0 * HBAR).unwrap()), shape),
@@ -237,23 +242,24 @@ where
             )
         );
         self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
+        debug_assert!(check_complex_for_nans(&self.grid.ψk));
         self.grid.ψ = inverse::<T, K, S>(&self.grid.ψk).unwrap();
+        debug_assert!(check_complex_for_nans(&self.grid.ψ));
 
         // Update position half-step
         self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
+        debug_assert!(check_complex_for_nans(&self.grid.ψ));
         self.parameters.time = self.parameters.time + dt;
 
-        //let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.total_sim_time - self.parameters.time)/dt)).unwrap();
-        //println!("update took {} millis, current sim time is {}, dt is {}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
-        println!("update took {} millis, current sim time is {}, dt is {}", now.elapsed().as_millis(), self.parameters.time, dt);
+        let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.total_sim_time - self.parameters.time)/dt)).unwrap();
+        println!("update took {} millis, current sim time is {}, dt is {}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
+        //println!("update took {} millis, current sim time is {}, dt is {}", now.elapsed().as_millis(), self.parameters.time, dt);
 
         if dump {
             self.dump();
             self.parameters.current_dumps = self.parameters.current_dumps + 1;
-        }
-
-        // estimate of time left
-        
+            self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap() * self.parameters.total_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
+        }        
     }
 
     /// This function computes the max timestep we can take, a constraint given by the minimum
@@ -267,20 +273,19 @@ where
         // Need to square and multiply by K to account for all k_i^2
         let kinetic_max: T = T::from_usize(K).unwrap() * kgrid_max * kgrid_max
             / (T::from_f64(2.0).unwrap() * self.parameters.particle_mass);
-        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI / HBAR).unwrap() / (kinetic_max);
-
+        let mut kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI / HBAR).unwrap() / (kinetic_max);
+        if kinetic_dt.is_infinite() {
+            kinetic_dt = T::max_value();
+        }
         // Max potential  
         let potential_max: T = max_all(&v).0;
-        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI * HBAR).unwrap() / (potential_max);
+        let mut potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI * HBAR).unwrap() / (potential_max.abs());
+        if potential_dt.is_infinite() {
+            potential_dt = T::max_value();
+        }
 
-        let time_to_next_dump = {
-            let mut t = T::zero();
-            while t < self.parameters.time {
-                t = t + self.parameters.total_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
-            }
-            t - self.parameters.time
-        };
-
+        let time_to_next_dump = T::from_u32(self.parameters.current_dumps + 1).unwrap() * self.parameters.total_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap() - self.parameters.time; 
+        //println!("dts = {} {} {}", kinetic_dt, potential_dt, time_to_next_dump);
 
         // least of three
         let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
@@ -288,10 +293,11 @@ where
         let mut dump = false;
         if dt == time_to_next_dump {
             dump = true;
+            println!("using time_to_next_dump {}", time_to_next_dump);
         } else if dt == kinetic_dt {
-            println!("using kinetic {}", kinetic_dt);
-        } else{
-            println!("using potential {}, potential max is {}", potential_dt, potential_max);
+            //println!("using kinetic {}", kinetic_dt);
+        } else {
+            //println!("using potential {}, potential max is {}", potential_dt, potential_max);
         }
         (dump, dt)
     }
@@ -333,7 +339,9 @@ where
 
         // Compute space density and perform inplace fft
         let mut ρ: Array<Complex<T>> = self.get_density().cast();
+        debug_assert!(check_complex_for_nans(&ρ));
         forward_inplace::<T, K, S>(&mut ρ);
+        debug_assert!(check_complex_for_nans(&ρ));
 
         // Compute potential in k-space and perform inplace inverse fft
         let mut φ: Array<Complex<T>> = div(
@@ -351,19 +359,31 @@ where
             &self.get_spec_grid().cast(),
             false
         );
+
+        // Populate 0 mode with 0.0
         let cond = isnan(&φ);
         let value = [false];
         let cond: Array<bool> = arrayfire::eq(&cond, &Array::new(&value, Dim4::new(&[1,1,1,1])), true);
         replace_scalar(&mut φ, &cond, 0.0);
 
         inverse_inplace::<T, K, S>(&mut φ);
+
+        debug_assert!(check_complex_for_nans(&φ));
+
         real(&φ)
     }
 
     /// This function writes out the wavefunction and metadata to disk
     pub fn dump(&self) {
 
-        //
+        let shape = self.get_shape().unwrap();
+        // Dump psi
+        complex_array_to_disk(
+            format!("tests/data/psi_{}", self.parameters.current_dumps+1).as_str(),
+            "psi",
+            &self.grid.ψ,
+            [shape.0, shape.1, shape.2, shape.3]
+        ).expect("error writing psi to disk")
     }
 
     /// This function calculates k^2 grid
