@@ -80,7 +80,7 @@ where
     let is_bad = is_nan || is_inf;
 
 
-    println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
+    //println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
     !is_bad
 }
 
@@ -102,7 +102,7 @@ where
 
     let is_bad = is_nan || is_inf;
 
-    println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
+    //println!("continuing {} with {} nans and {} infs", !is_bad, nan_sum.0 + nan_sum.1, inf_sum.0 + inf_sum.0);
     !is_bad
 }
 

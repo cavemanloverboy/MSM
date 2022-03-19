@@ -33,7 +33,7 @@ where
      let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
      let real = real.into_shape(array_to_tuple(shape)).unwrap();
      let imag = imag.into_shape(array_to_tuple(shape)).unwrap();
-     println!("host shape is now {:?}", real.shape());
+     //println!("host shape is now {:?}", real.shape());
  
      // Write to npz
      use ndarray_npy::NpzWriter;
