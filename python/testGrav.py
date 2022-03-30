@@ -90,6 +90,7 @@ def initSim():
 
     s.kx_ord = kx_ord
     s.kx = kx
+    s.k_cutoff_frac = .99
     s.MakeSpecGrid(s.N, dx)
 
     # set meta params 
