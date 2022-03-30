@@ -19,7 +19,7 @@ fn main() {
           // Simulation Parameters
           let axis_length: T = 60.0; 
           let time: T = 0.0;
-          let total_sim_time: T = 500000.0;
+          let total_sim_time: T = 1000.0; //500000.0;
           let cfl: T = 0.05;
           let num_data_dumps: u32 = 200;
           let total_mass: f64 = 1e12;
