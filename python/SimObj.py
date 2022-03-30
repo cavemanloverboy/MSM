@@ -105,6 +105,9 @@ class SimObj(object):
                     # output state of dynamical variables
                     solver_.DataDrop(i+1, self.ofile)
                     # ------------------------------------- #
+                
+                if not(solver_.working):
+                    print('solver no longer working')
 
             # info drop on terminal
             if verbose:
