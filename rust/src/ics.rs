@@ -2,19 +2,22 @@ use crate::{
     simulation_object::*,
     utils::{
         grid::{normalize, check_norm},
-        io::array_to_disk,   
+        io::array_to_disk,
+        complex::complex_constant,
+        fft::{forward_inplace, get_kgrid},
     },
 };
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, Fromf64, ConstGenerator};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, exp, random_uniform, Fromf64, ConstGenerator, RandomEngine};
 use num::{Complex, Float, FromPrimitive};
 use std::fmt::Display;
 use std::iter::Iterator;
 
 
+/// This function produces initial conditions corresonding to a cold initial gaussian in sp
 pub fn cold_gauss<T, const K: usize, const S: usize>(
     mean: [T; 3],
     std: [T; 3],
-    params: SimulationParameters<T, S>,
+    params: SimulationParameters<T, K, S>,
 ) -> SimulationObject<T, K, S>
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
@@ -38,7 +41,6 @@ where
     }
     let x_dims = Dim4::new(&[S as u64, 1, 1, 1]);
     let mut ψx: Array<Complex<T>> = Array::new(&ψx_values, x_dims);
-    array_to_disk("x", "x", &arrayfire::abs(&ψx), [S as u64, 1, 1, 1]);
     normalize::<T, K>(&mut ψx, params.dx);
     debug_assert!(check_norm::<T, K>(&ψx, params.dx));
 
@@ -75,6 +77,10 @@ where
     let mut ψ = mul(& ψ, &ψz, true);
     normalize::<T, K>(&mut ψ, params.dx);
     debug_assert!(check_norm::<T, K>(&ψ, params.dx));
+
+    let ψk = crate::utils::fft::forward::<T, K, S>(&ψ).unwrap();
+    debug_assert!(check_norm::<T, K>(&ψk, params.dk));
+    
     SimulationObject::<T, K, S>::new(
         ψ,
         params.axis_length,
@@ -85,12 +91,112 @@ where
         params.total_mass,
         params.particle_mass,
         params.sim_name,
+        params.k2_cutoff,
+        params.alias_threshold,
     )
 }
 
+pub fn cold_gauss_kspace<T, const K: usize, const S: usize>(
+    mean: [T; 3],
+    std: [T; 3],
+    params: SimulationParameters<T, K, S>,
+) -> SimulationObject<T, K, S>
+where
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
+{
+
+    // Construct kspace grid
+    let kx = get_kgrid::<T, S>(params.dx).to_vec();
+    let ky = &kx;
+    let kz = &kx;
+
+    // Construct ψx
+    let mut ψx_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+    for (i, ψx_val) in ψx_values.iter_mut().enumerate(){
+        *ψx_val = Complex::<T>::new(
+            (T::from_f64(-0.5).unwrap() * ((kx[i] - mean[0]) / std[0]).powf(T::from_f64(2.0).unwrap())).exp(),
+            T::zero(),
+        );
+    }
+    let x_dims = Dim4::new(&[S as u64, 1, 1, 1]);
+    let mut ψx: Array<Complex<T>> = Array::new(&ψx_values, x_dims);
+    normalize::<T, K>(&mut ψx, params.dk);
+    debug_assert!(check_norm::<T, K>(&ψx, params.dk));
+
+    // Construct ψy
+    let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+    for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
+        *ψy_val = Complex::<T>::new(
+            (T::from_f64(-0.5).unwrap() * ((ky[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
+            T::zero(),
+        );
+    }
+    let y_dims = Dim4::new(&[1, S as u64, 1, 1]);
+    let mut ψy = Array::new(&ψy_values, y_dims);
+    normalize::<T, K>(&mut ψy, params.dk);
+    debug_assert!(check_norm::<T, K>(&ψy, params.dk));
+
+
+    // Construct ψz
+    let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+    for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
+        *ψz_val = Complex::<T>::new(
+            (T::from_f64(-0.5).unwrap() * ((kz[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
+            T::zero(),
+        );
+    }
+    let z_dims = Dim4::new(&[1, 1, S as u64, 1]);
+    let mut ψz = Array::new(&ψz_values, z_dims);
+    normalize::<T, K>(&mut ψz, params.dk);
+    debug_assert!(check_norm::<T, K>(&ψz, params.dk));
+
+
+    // Construct ψ in k space by multiplying the x, y, z functions just constructed.
+    let ψ = mul(&ψx, &ψy, true);
+    let mut ψ = mul(&ψ, &ψz, true);
+    normalize::<T, K>(&mut ψ, params.dk);
+    debug_assert!(check_norm::<T, K>(&ψ, params.dk));
+
+    // Multiply random phases and then fft to get spatial ψ
+    let seed = Some(0);
+    let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, seed);
+    let ψ_dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
+    let mut ψ = mul(
+        &ψ,
+        &exp(
+            &mul(
+                &complex_constant(
+                    Complex::<T>::new(T::zero(),T::from_f64(2.0 * std::f64::consts::PI).unwrap()),
+                    (S as u64, S as u64, S as u64, 1)
+                ),
+                &random_uniform::<T>(ψ_dims, &engine).cast(),
+                false
+            )
+        ),
+        false
+    );
+    debug_assert!(check_norm::<T, K>(&ψ, params.dk));
+    forward_inplace::<T, K, S>(&mut ψ).expect("failed k-space -> spatial fft in cold gaussian kspace ic initialization");
+    //normalize::<T, K>(&mut ψ, params.dx);
+    debug_assert!(check_norm::<T, K>(&ψ, params.dx));
 
 
 
+    SimulationObject::<T, K, S>::new(
+        ψ,
+        params.axis_length,
+        params.time,
+        params.total_sim_time,
+        params.cfl,
+        params.num_data_dumps,
+        params.total_mass,
+        params.particle_mass,
+        params.sim_name,
+        params.k2_cutoff,
+        params.alias_threshold,
+    )
+}
 
 
 
@@ -117,7 +223,10 @@ fn test_cold_gauss_initialization() {
     let total_mass = 1.0;
     let particle_mass = 1.0;
     let sim_name = "cold-gauss";
-    let params = SimulationParameters::<T, S>::new(
+    let k2_cutoff = 0.95;
+    let alias_threshold = 0.02;
+
+    let params = SimulationParameters::<T, K, S>::new(
         axis_length,
         time,
         total_sim_time,
@@ -126,6 +235,8 @@ fn test_cold_gauss_initialization() {
         total_mass,
         particle_mass,
         sim_name,
+        k2_cutoff,
+        alias_threshold,
     );
 
     // Create a Simulation Object using Gaussian parameters and

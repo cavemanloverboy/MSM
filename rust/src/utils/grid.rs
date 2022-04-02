@@ -1,9 +1,8 @@
 
-use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, isnan, isinf, Fromf64, ComplexFloating};
+use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, isnan, isinf, real, Fromf64, ComplexFloating};
 use num::{Float, Complex, FromPrimitive, ToPrimitive};
 use std::fmt::Display;
 use approx::{assert_abs_diff_eq};
-use crate::utils::error::MSMError;
 
 
 pub fn normalize<T, const K: usize>(
@@ -12,7 +11,7 @@ pub fn normalize<T, const K: usize>(
 )
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
 {
     
     // Compute norm as grid * conjg(grid)
@@ -33,17 +32,17 @@ pub fn check_norm<T, const K: usize>(
     dx: T,
 ) -> bool
 where
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ToPrimitive,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
+    T: Float + FloatingPoint + FromPrimitive + Display + HasAfEnum<BaseType = T> + HasAfEnum<AggregateOutType = T> + Fromf64 + ToPrimitive,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> +  HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T>,
 {
     
     // Compute norm as grid * conjg(grid)
-    let norm = sum_all(
-        &mul(
+    let norm: (T, T) = sum_all(
+        &real(&mul(
             grid,
             &conjg(grid),
             false
-        )
+        ))
     );
     
 
@@ -55,6 +54,7 @@ where
         ).unwrap(),
         1.0,
         epsilon = 1e-6);
+
     (norm.0*dx.powf(T::from_usize(K).unwrap()) - T::one()).abs() < T::from_f64(1e-6).unwrap()
 }
 

@@ -1,10 +1,11 @@
 use arrayfire::*;
 use num::{Complex, Float, FromPrimitive};
-use crate::utils::error::MSMError;
+use crate::utils::error::ParameterError;
+use anyhow::Result;
 
 pub fn forward<T, const K: usize, const S: usize>(
     array: &Array<Complex<T>>
-) -> Result<Array<Complex<T>>, MSMError>
+) -> Result<Array<Complex<T>>>
 where
     T: Float + FloatingPoint,
     Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
@@ -18,13 +19,13 @@ where
         1 => Ok( fft(array, norm_factor, S as i64)),
         2 => Ok(fft2(array, norm_factor, S as i64, S as i64)),
         3 => Ok(fft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(MSMError::InvalidNumDumensions(K))
+        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
     }
 }
 
 pub fn inverse<T, const K: usize, const S: usize>(
     array: &Array<Complex<T>>
-)-> Result<Array<Complex<T>>, MSMError>
+)-> Result<Array<Complex<T>>>
 where
     T: Float + FloatingPoint,
     Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>>,
@@ -38,11 +39,11 @@ where
         1 => Ok( ifft(array, norm_factor, S as i64)),
         2 => Ok(ifft2(array, norm_factor, S as i64, S as i64)),
         3 => Ok(ifft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(MSMError::InvalidNumDumensions(K))
+        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
     }
 }
 
-pub fn forward_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>) -> Result<(), MSMError>
+pub fn forward_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>) -> Result<()>
 where
     T: Float,
     Complex<T>: HasAfEnum + ComplexFloating,
@@ -55,11 +56,11 @@ where
         1 => Ok( fft_inplace(array, norm_factor)),
         2 => Ok(fft2_inplace(array, norm_factor)),
         3 => Ok(fft3_inplace(array, norm_factor)),
-        _ => Err(MSMError::InvalidNumDumensions(K))
+        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
     }
 }
 
-pub fn inverse_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>)-> Result<(), MSMError>
+pub fn inverse_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>)-> Result<()>
 where
     T: Float,
     Complex<T>: HasAfEnum + ComplexFloating,
@@ -72,7 +73,7 @@ where
         1 => Ok( ifft_inplace(array, norm_factor)),
         2 => Ok(ifft2_inplace(array, norm_factor)),
         3 => Ok(ifft3_inplace(array, norm_factor)),
-        _ => Err(MSMError::InvalidNumDumensions(K))
+        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
     }
 }
 

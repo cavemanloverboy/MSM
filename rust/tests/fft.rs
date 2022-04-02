@@ -4,7 +4,10 @@ fn test_arrayfire_1_d_inplace_c32_integration() {
     
     // Gather requirements for unit test
     use arrayfire::{Dim4, Array};
-    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use msm::utils::{
+        fft::{forward_inplace, inverse_inplace},
+        grid::check_norm
+    };
     use approx::assert_abs_diff_eq;
     use num::Complex;
 
@@ -12,20 +15,28 @@ fn test_arrayfire_1_d_inplace_c32_integration() {
 
     // Set dimension, fft size
     const K: usize = 1;
-    const S: usize = 2;
+    const S: usize = 8;
     const SIZE: usize = S.pow(K as u32);
+    let length: T = 128.0;
 
     // c32 values to go in array
-    let values = [Complex::<T>::new(0.0, 2.0); SIZE];
+    let values = [Complex::<T>::new(0.0, length.powf(-1.0/2.0)); SIZE];
+    
 
     // Specify dimensions of
     let dims = Dim4::new(&[S as u64, 1, 1, 1]);
 
     // Initialize array
     let mut array : Array<Complex<T>> = Array::new(&values, dims);
+    let dx = length/S as T; // This is manually calculated to make array norm = 1
+    arrayfire::af_print!("array", &array);
+    debug_assert!(check_norm::<T, K>(&array, dx));
 
-    // Perform inplace FFT + inverse
+    // Perform inplace FFT + inverse, ensuring normalization in kspace
     forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    arrayfire::af_print!("array", &array);
+    let dk = dx;//1.0/length*(S as T).sqrt();
+    debug_assert!(check_norm::<T, K>(&array, dk)); 
     inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
 
     // Create hosts for comparison
@@ -103,7 +114,10 @@ fn test_arrayfire_2_d_inplace_c32_integration() {
     
     // Gather requirements for unit test
     use arrayfire::{Dim4, Array};
-    use msm::utils::fft::{forward_inplace, inverse_inplace};
+    use msm::utils::{
+        fft::{forward_inplace, inverse_inplace},
+        grid::check_norm
+    };
     use approx::assert_abs_diff_eq;
     use num::Complex;
 
@@ -122,9 +136,13 @@ fn test_arrayfire_2_d_inplace_c32_integration() {
 
     // Initialize array
     let mut array = Array::new(&values, dims);
+    let dx = 1.0/8.0; // This is manually calculated to make array norm = 1
+    //debug_assert!(check_norm::<T, K>(&array, dx));
 
     // Perform inplace FFT + inverse
     forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    //arrayfire::af_print!("post fft", &array);
+    //debug_assert!(check_norm::<T, K>(&array, 1.0/0.25/16.0)); // TODO: figure out why this is 16...
     inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
 
     // Create hosts for comparison
