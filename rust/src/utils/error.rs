@@ -1,8 +1,7 @@
 use thiserror::Error;
-use num::{Float};
-use std::fmt::Display;
 
 #[derive(Error, Debug)]
+#[allow(non_snake_case)]
 pub enum ParameterError {
     #[error("Invalid number of dimensions (expected 1, 2, 3, got {K:?}")]
     InvalidNumDumensions {

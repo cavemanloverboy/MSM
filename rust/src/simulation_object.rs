@@ -6,7 +6,7 @@ use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
         grid::{check_complex_for_nans, check_for_nans, check_norm},
-        fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid, get_kgrid},
+        fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid},
         complex::complex_constant,
         io::{complex_array_to_disk},
         error::*,
@@ -75,13 +75,15 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const K: usize, const 
     /// HBAR tilde (HBAR / particle_mass)
     pub hbar_: U,
 
-    // Simulation parameters
+    // Simulation parameters and metadata
     /// Simulation name
     pub sim_name: &'static str,
     /// Fourier alias bound, in [0, 1]
     pub k2_cutoff: f64,
     /// Alias threshold (probability mass), in [0,1]
     pub alias_threshold: f64,
+    /// Simulation wall time (millis)
+    pub sim_wall_time: u128
     
 }
 
@@ -145,6 +147,7 @@ where
         let dx = axis_length / U::from_usize(S).unwrap();
         //let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / axis_length;
         let dk = dx; //TODO: figure out why thiis works //U::one() / axis_length / U::from_usize(S).unwrap();
+        //let dk = get_kgrid::<U, S>(dx)[1];
         let current_dumps = 0;
         let hbar_ = U::from_f64(HBAR/particle_mass).unwrap();
         let time_steps = 0;
@@ -159,6 +162,7 @@ where
         );
 
         let k2_max: U = max_all(&spec_grid).0;
+        let sim_wall_time = 0;
 
         SimulationParameters {
             axis_length,
@@ -178,6 +182,7 @@ where
             alias_threshold,
             spec_grid,
             k2_max,
+            sim_wall_time,
         }
     }
 }
@@ -293,7 +298,7 @@ where
                 true
             )
         );
-        complex_array_to_disk("r_evo", "r_evo", &r_evolution, [shape.0, shape.1, shape.2, shape.3]);
+        //complex_array_to_disk("r_evo", "r_evo", &r_evolution, [shape.0, shape.1, shape.2, shape.3]);
         // these are the fields with kinetic at t + dt/2 but momentum at t + dt
         self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
         debug_assert!(check_complex_for_nans(&self.grid.ψ));
@@ -312,7 +317,7 @@ where
                 true
             )
         );
-        complex_array_to_disk("k_evo", "k_evo", &k_evolution, [shape.0, shape.1, shape.2, shape.3]);
+        //complex_array_to_disk("k_evo", "k_evo", &k_evolution, [shape.0, shape.1, shape.2, shape.3]);
         //assert!(false);
         // Now all fields have kinetic + momentum at t + dt
         self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
@@ -341,12 +346,15 @@ where
             });
         }
 
-
+        // Perform data dump if appropriate
         if dump {
             self.dump();
             self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap() * self.parameters.total_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
         }        
 
+        // Increment wall time counter
+        self.parameters.sim_wall_time += now.elapsed().as_millis();
+        
         Ok(())
     }
 
@@ -375,7 +383,7 @@ where
 
         // Take smallest of all time steps
         let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
-        println!("kinetic/potential = {}", kinetic_dt/potential_dt);
+        //println!("kinetic/potential = {}", kinetic_dt/potential_dt);
 
         // If taking time_to_next_dump, return dump flag
         let mut dump = false;

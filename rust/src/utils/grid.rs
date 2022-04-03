@@ -53,9 +53,9 @@ where
             )
         ).unwrap(),
         1.0,
-        epsilon = 1e-6);
+        epsilon = 1e-4);
 
-    (norm.0*dx.powf(T::from_usize(K).unwrap()) - T::one()).abs() < T::from_f64(1e-6).unwrap()
+    (norm.0*dx.powf(T::from_usize(K).unwrap()) - T::one()).abs() < T::from_f64(1e-4).unwrap()
 }
 
 
