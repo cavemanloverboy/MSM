@@ -21,7 +21,7 @@ use std::time::Instant;
 /// This struct holds the grids which store the wavefunction, its Fourier transform, and other grids
 pub struct SimulationGrid<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive,
     Complex<T>: HasAfEnum + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
@@ -92,7 +92,7 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const K: usize, const 
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
 pub struct SimulationObject<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
@@ -106,7 +106,7 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationGrid<T, K, S>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + FromPrimitive,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
  {
 
