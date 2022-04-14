@@ -7,10 +7,12 @@ use crate::{
         fft::{forward_inplace, get_kgrid},
     },
 };
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, mul, exp, random_uniform, Fromf64, ConstGenerator, RandomEngine};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, add, mul, exp, random_uniform, conjg, arg, div, abs, Fromf64, ConstGenerator, RandomEngine};
 use num::{Complex, Float, FromPrimitive};
+use num_traits::FloatConst;
 use std::fmt::Display;
 use std::iter::Iterator;
+use rand_distr::{Poisson, Distribution, };
 
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -198,7 +200,168 @@ where
     )
 }
 
+pub fn cold_gauss_kspace_sample<T, const K: usize, const S: usize>(
+    mean: [T; 3],
+    std: [T; 3],
+    params: SimulationParameters<T, K, S>,
+    scheme: SamplingScheme,
+) -> SimulationObject<T, K, S>
+where
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
+    rand_distr::Standard: Distribution<T>
+{
+    let mut simulation_object = cold_gauss_kspace::<T, K, S>(mean, std, params);
+    sample_quantum_perturbation::<T, K, S>(&mut simulation_object.grid, &simulation_object.parameters, scheme);
+    simulation_object
+}
 
+
+/// This function takes in some input and returns it with some noise based on given `n` and sampling method.
+pub fn sample_quantum_perturbation<T, const K: usize, const S: usize>(
+    grid: &mut SimulationGrid<T, K, S>,
+    parameters: &SimulationParameters<T, K, S>,
+    scheme: SamplingScheme,
+)
+where 
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
+    rand_distr::Standard: Distribution<T>
+{
+    // Unpack required quantities from simulation parameters
+    let n: T = T::from_f64(parameters.total_mass / parameters.particle_mass).unwrap();
+    let sqrt_n: Array<Complex<T>> = complex_constant(Complex::<T>::new(T::zero(), n.sqrt()), (1, 1, 1, 1));
+    let dims = get_dim4::<K, S>();
+    let ψ = &mut grid.ψ;
+
+    // Convert input field to expected count per cell
+    // TODO: Perhaps optimize mem storage by reusing ψ 
+    let ψ_count: Array<Complex<T>> = mul(
+        ψ, 
+        &complex_constant(Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), (1,1,1,1)),
+        true
+    );
+
+    // RNG engine
+    let seed = Some(0);
+    let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, seed);
+
+    match scheme {
+
+        SamplingScheme::Poisson => {
+
+            println!("Poisson Scheme");
+
+            // Multiply ψ by sqrt(n)
+            let ψ_: Array<Complex<T>> = mul(&ψ_count, &sqrt_n, true);
+
+            // Sample poisson
+            println!("Sample Poisson");
+            let mut rng = rand::thread_rng();
+            let sqrt_poisson_sample: Array<T> = {
+
+                // Host array of norm squared to be able to sample from poisson via
+                let norm_sq_array: Array<T> = abs(&mul(&ψ_, &conjg(&ψ_), false)).cast();
+                let mut norm_sq = vec![T::zero(); S.pow(K as u32)];
+                norm_sq_array.host(&mut norm_sq);
+
+                // Iterate through vector, mapping x --> Poisson(x).sample().sqrt()
+                let sample: Vec<T> = norm_sq
+                    .iter()
+                    .map(|&x| Poisson::new(x).unwrap().sample(&mut rng).sqrt())
+                    .collect();
+
+                // poisson_sample return value
+                Array::new(&sample, dims)
+            };
+            println!("Sampled Poisson");
+
+            // Multiply new ψ_ by sqrt poisson sample
+            let mut ψ_ = mul(&ψ_, &sqrt_poisson_sample.cast(), false);
+
+            // Multiply by original phases
+            ψ_ = mul(&ψ_, &arg(ψ).cast(), false);
+
+            // Divide again by sqrt(n)
+            ψ_ = div(&ψ_, &sqrt_n, true);
+
+            // Finally, move data into ψ after converting count -> density
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+        },
+
+        SamplingScheme::Wigner => {
+            
+            // Sample independent Gaussian pairs --> Complex
+            // pseudocode: add normal() + i*normal()
+            let mut samples: Array<Complex<T>> = add(
+                &arrayfire::random_normal(dims, &engine),
+                &mul(
+                    &Complex::<T>::new(T::zero(),T::one()),
+                    &arrayfire::random_normal(dims, &engine),
+                    true
+                ),
+                false
+            );
+
+            // Scale the samples
+            samples = div(
+                &samples, 
+                &Complex::<T>::new(n.sqrt()*T::from_f64(1.0/2.0).unwrap(), T::zero()),
+                true
+            );
+
+
+            // Add them to ψ_count
+            let ψ_ = add(&ψ_count, &samples, false);
+
+            // Finally, move data into ψ
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+        },
+
+        SamplingScheme::Husimi => {
+
+            // Sample independent Gaussian pairs --> Complex
+            // pseudocode: add normal() + i*normal()
+            let mut samples: Array<Complex<T>> = add(
+                &arrayfire::random_normal(dims, &engine),
+                &mul(
+                    &Complex::<T>::new(T::zero(),T::one()),
+                    &arrayfire::random_normal(dims, &engine),
+                    true
+                ),
+                false
+            );
+
+            // Scale the samples
+            samples = div(
+                &samples, 
+                &sqrt_n,
+                true
+            );
+
+            // Add them to ψ_count
+            let ψ_ = add(&ψ_count, &samples, false);
+
+            // Finally, move data into ψ after converting count -> density
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+        }
+    }
+}
+
+fn get_dim4<const K: usize, const S: usize>() -> Dim4 {
+    match K {
+        1 => Dim4::new(&[S as u64, 1, 1, 1]),
+        2 => Dim4::new(&[S as u64, S as u64, 1, 1]),
+        3 => Dim4::new(&[S as u64, S as u64, S as u64, 1]),
+        _ => panic!("Invalid Number of Dimensions")
+    }
+}
+
+pub enum SamplingScheme {
+    Poisson,
+    Wigner,
+    Husimi,
+}
 
 #[test]
 fn test_cold_gauss_initialization() {
