@@ -6,3 +6,9 @@ python/__pycache__/utils.cpython-38.pyc
 .gitignore
 python/__pycache__/gravSolver.cpython-38.pyc
 python/__pycache__/IC3D.cpython-38.pyc
+rust/Cargo.lock
+rust/.DS_Store
+.gitignore
+rust/tests/data/.DS_Store
+.gitignore
+.DS_Store
