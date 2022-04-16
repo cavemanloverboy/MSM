@@ -8,11 +8,13 @@ use crate::{
     },
 };
 use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, add, mul, exp, random_uniform, conjg, arg, div, abs, Fromf64, ConstGenerator, RandomEngine};
-use num::{Complex, Float, FromPrimitive};
+use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
 use std::fmt::Display;
 use std::iter::Iterator;
-use rand_distr::{Poisson, Distribution, };
+use rand_distr::{Poisson, Distribution};
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -224,13 +226,13 @@ pub fn sample_quantum_perturbation<T, const K: usize, const S: usize>(
     scheme: SamplingScheme,
 )
 where 
-    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst,
+    T: Display + Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst + ToPrimitive,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
-    rand_distr::Standard: Distribution<T>
+    rand_distr::Standard: Distribution<f64>
 {
     // Unpack required quantities from simulation parameters
-    let n: T = T::from_f64(parameters.total_mass / parameters.particle_mass).unwrap();
-    let sqrt_n: Array<Complex<T>> = complex_constant(Complex::<T>::new(T::zero(), n.sqrt()), (1, 1, 1, 1));
+    let n: f64 = parameters.total_mass / parameters.particle_mass;
+    let sqrt_n: T = T::from_f64(n.sqrt()).unwrap();
     let dims = get_dim4::<K, S>();
     let ψ = &mut grid.ψ;
 
@@ -238,7 +240,7 @@ where
     // TODO: Perhaps optimize mem storage by reusing ψ 
     let ψ_count: Array<Complex<T>> = mul(
         ψ, 
-        &complex_constant(Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), (1,1,1,1)),
+        &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()).sqrt(), T::zero()),
         true
     );
 
@@ -252,44 +254,50 @@ where
 
             println!("Poisson Scheme");
 
-            // Multiply ψ by sqrt(n)
-            let ψ_: Array<Complex<T>> = mul(&ψ_count, &sqrt_n, true);
-
-            // Sample poisson
-            println!("Sample Poisson");
+            // Sample poisson, take sqrt, and divide by sqrt of n
             let mut rng = rand::thread_rng();
             let sqrt_poisson_sample: Array<T> = {
 
-                // Host array of norm squared to be able to sample from poisson via
-                let norm_sq_array: Array<T> = abs(&mul(&ψ_, &conjg(&ψ_), false)).cast();
+                // Host array of norm squared to be able to sample from poisson
+                let norm_sq_array: Array<T> = abs(&mul(ψ, &conjg(ψ), false)).cast();
                 let mut norm_sq = vec![T::zero(); S.pow(K as u32)];
                 norm_sq_array.host(&mut norm_sq);
 
                 // Iterate through vector, mapping x --> Poisson(x).sample().sqrt()
                 let sample: Vec<T> = norm_sq
                     .iter()
-                    .map(|&x| Poisson::new(x).unwrap().sample(&mut rng).sqrt())
+                    .map(|&x| { 
+
+                        // Poisson parameter is (probability mass in cell) * (total number of particles)
+                        let pois_param: f64 = (x.to_f64().unwrap() * parameters.dx.to_f64().unwrap().powf(K as f64)) * n;
+                        debug_assert!(pois_param.is_finite());
+
+                        // Sample poisson
+                        let pois: Poisson<f64> = Poisson::new(pois_param).unwrap();
+                        let a = pois.sample(&mut rng);
+
+                        // Take poisson sample, divide by n, and take sqrt
+                        let result = T::from_f64((a/n).sqrt()).unwrap();
+                        debug_assert!(result.is_finite());
+
+                        result
+                    })
                     .collect();
 
                 // poisson_sample return value
                 Array::new(&sample, dims)
             };
-            println!("Sampled Poisson");
-
-            // Multiply new ψ_ by sqrt poisson sample
-            let mut ψ_ = mul(&ψ_, &sqrt_poisson_sample.cast(), false);
 
             // Multiply by original phases
-            ψ_ = mul(&ψ_, &arg(ψ).cast(), false);
-
-            // Divide again by sqrt(n)
-            ψ_ = div(&ψ_, &sqrt_n, true);
+            let ψ_: Array<Complex<T>> = mul(&sqrt_poisson_sample.cast(), &exp(&mul(&arg(ψ).cast(), &Complex::<T>::new(T::zero(),T::one()), true)), false).cast();
 
             // Finally, move data into ψ after converting count -> density
-            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()).sqrt(), T::zero()), true);
         },
 
         SamplingScheme::Wigner => {
+
+            println!("Wigner Sampling Scheme");
             
             // Sample independent Gaussian pairs --> Complex
             // pseudocode: add normal() + i*normal()
@@ -306,7 +314,7 @@ where
             // Scale the samples
             samples = div(
                 &samples, 
-                &Complex::<T>::new(n.sqrt()*T::from_f64(1.0/2.0).unwrap(), T::zero()),
+                &Complex::<T>::new(sqrt_n*T::from_f64(1.0/2.0).unwrap(), T::zero()),
                 true
             );
 
@@ -319,6 +327,8 @@ where
         },
 
         SamplingScheme::Husimi => {
+
+            println!("Husimi Sampling Scheme");
 
             // Sample independent Gaussian pairs --> Complex
             // pseudocode: add normal() + i*normal()
@@ -335,7 +345,7 @@ where
             // Scale the samples
             samples = div(
                 &samples, 
-                &sqrt_n,
+                &Complex::<T>::new(sqrt_n*T::from_f64(1.0/2.0).unwrap().sqrt(), T::zero()),
                 true
             );
 
