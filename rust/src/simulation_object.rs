@@ -77,7 +77,7 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const K: usize, const 
 
     // Simulation parameters and metadata
     /// Simulation name
-    pub sim_name: &'static str,
+    pub sim_name: String,
     /// Fourier alias bound, in [0, 1]
     pub k2_cutoff: f64,
     /// Alias threshold (probability mass), in [0,1]
@@ -92,7 +92,7 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const K: usize, const 
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
 pub struct SimulationObject<T, const K: usize, const S: usize>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive + std::fmt::LowerExp,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<AbsOutType = T>,
 {
 
@@ -137,7 +137,7 @@ where
         num_data_dumps: u32,
         total_mass: f64,
         particle_mass: f64,
-        sim_name: &'static str,
+        sim_name: String,
         k2_cutoff: f64,
         alias_threshold: f64,
     ) -> Self
@@ -211,7 +211,7 @@ where
 
 impl<T, const K: usize, const S: usize> SimulationObject<T, K, S>
 where
-    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement,
+    T: Float + FloatingPoint + Display + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + std::fmt::LowerExp,
     Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T> + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
 
@@ -224,7 +224,7 @@ where
         num_data_dumps: u32,
         total_mass: f64,
         particle_mass: f64,
-        sim_name: &'static str,
+        sim_name: String,
         k2_cutoff: f64,
         alias_threshold: f64,
     ) -> Self {
@@ -274,7 +274,7 @@ where
         // exp(-(dt/2) * (k^2 / 2) / h_) = exp(-dt/4/h_ * k^2)
         let k_evolution: Array<Complex<T>> = exp(
             &mul(
-                &complex_constant(Complex::<T>::new(T::zero(), - dt / T::from_f64(4.0).unwrap() / self.parameters.hbar_), (1,1,1,1)),
+                &complex_constant(Complex::<T>::new(T::zero(), - dt / T::from_f64(4.0).unwrap() * self.parameters.hbar_), (1,1,1,1)),
                 &self.parameters.spec_grid.cast(),
                 true
             )
@@ -332,7 +332,7 @@ where
 
         // Print estimate of time to completion
         let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.total_sim_time - self.parameters.time)/dt)).unwrap_or(1);
-        println!("update took {} millis, current sim time is {}, dt is {}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
+        println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
 
         // Check for Fourier Aliasing
         let aliased = self.check_alias();
@@ -467,9 +467,13 @@ where
     pub fn dump(&mut self) {
 
         let shape = self.get_shape().unwrap();
+
+        // Create directory if necessary
+        std::fs::create_dir_all(format!("sim_data/{}/", self.parameters.sim_name)).expect("failed to make directory");
+
         // Dump psi
         complex_array_to_disk(
-            format!("tests/data/{}_psi_{}", self.parameters.sim_name, self.parameters.current_dumps+1).as_str(),
+            format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps+1).as_str(),
             "psi",
             &self.grid.ψ,
             [shape.0, shape.1, shape.2, shape.3]
@@ -567,7 +571,7 @@ fn test_new_sim_parameters() {
     let num_data_dumps: u32 = 100;
     let total_mass: T = 1.0;
     let particle_mass: T = 1e-12;
-    let sim_name: &'static str = "my-sim";
+    let sim_name: String = "my-sim".to_string();
     let k2_cutoff: f64 = 0.95;
     let alias_threshold: f64 = 0.02;
 
