@@ -2,7 +2,6 @@ use crate::{
     simulation_object::*,
     utils::{
         grid::{normalize, check_norm},
-        io::array_to_disk,
         complex::complex_constant,
         fft::{forward_inplace, get_kgrid},
     },
@@ -13,8 +12,6 @@ use num_traits::FloatConst;
 use std::fmt::Display;
 use std::iter::Iterator;
 use rand_distr::{Poisson, Distribution};
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
 
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -97,6 +94,7 @@ where
         params.sim_name,
         params.k2_cutoff,
         params.alias_threshold,
+        Some(params.hbar_.to_f64().unwrap())
     )
 }
 
@@ -199,6 +197,7 @@ where
         params.sim_name,
         params.k2_cutoff,
         params.alias_threshold,
+        Some(params.hbar_.to_f64().unwrap())
     )
 }
 
@@ -398,6 +397,7 @@ fn test_cold_gauss_initialization() {
     let sim_name = "cold-gauss".to_string();
     let k2_cutoff = 0.95;
     let alias_threshold = 0.02;
+    let hbar_ = None;
 
     let params = SimulationParameters::<T, K, S>::new(
         axis_length,
@@ -410,6 +410,7 @@ fn test_cold_gauss_initialization() {
         sim_name,
         k2_cutoff,
         alias_threshold,
+        hbar_
     );
 
     // Create a Simulation Object using Gaussian parameters and
