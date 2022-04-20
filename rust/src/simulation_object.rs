@@ -116,7 +116,7 @@ where
     {
         let ψk = forward::<T, K, S>(&ψ).expect("failed forward fft"); 
         SimulationGrid {
-            φ: real(&ψ).cast(), // Initialized to be incorrect values!
+            φ: real(&ψ).cast(), // Note: Initialized to be incorrect values!
             ψ,
             ψk,
         }
@@ -140,6 +140,7 @@ where
         sim_name: String,
         k2_cutoff: f64,
         alias_threshold: f64,
+        hbar_: Option<f64>,
     ) -> Self
     {
 
@@ -149,7 +150,8 @@ where
         let dk = dx; //TODO: figure out why thiis works //U::one() / axis_length / U::from_usize(S).unwrap();
         //let dk = get_kgrid::<U, S>(dx)[1];
         let current_dumps = 0;
-        let hbar_ = U::from_f64(HBAR/particle_mass).unwrap();
+
+        let hbar_: U = U::from_f64(hbar_.unwrap_or(HBAR/particle_mass)).unwrap();
         let time_steps = 0;
 
         let spec_grid = spec_grid::<U, K, S>(axis_length / U::from_usize(S).unwrap(), 
@@ -201,6 +203,7 @@ where
         write!(f, "num_data_dumps = {}\n", self.num_data_dumps)?;
         write!(f, "total_mass     = {}\n", self.total_mass)?;
         write!(f, "particle_mass  = {}\n", self.particle_mass)?;
+        write!(f, "hbar_          = {}\n", self.hbar_)?;
         write!(f, "sim_name       = {}\n", self.sim_name,)?;
         write!(f, "{}\n","-".repeat(40))?;
         Ok(())
@@ -227,6 +230,7 @@ where
         sim_name: String,
         k2_cutoff: f64,
         alias_threshold: f64,
+        hbar_: Option<f64>
     ) -> Self {
         
         // Construct components
@@ -242,6 +246,7 @@ where
             sim_name,
             k2_cutoff,
             alias_threshold,
+            hbar_
         );
 
         let sim_obj = SimulationObject {
@@ -258,7 +263,6 @@ where
 
         // Begin timer for update loop
         let now = Instant::now();
-        let shape = self.get_shape().unwrap();
 
         // Initial checks
         debug_assert!(check_norm::<T, K>(&self.grid.ψ, self.parameters.dx));
@@ -574,6 +578,7 @@ fn test_new_sim_parameters() {
     let sim_name: String = "my-sim".to_string();
     let k2_cutoff: f64 = 0.95;
     let alias_threshold: f64 = 0.02;
+    let hbar_ = None;
 
     let params = SimulationParameters::<T, K, S>::new(
         axis_length,
@@ -586,6 +591,7 @@ fn test_new_sim_parameters() {
         sim_name,
         k2_cutoff,
         alias_threshold,
+        hbar_
     );
     println!("{}", params);
 }
