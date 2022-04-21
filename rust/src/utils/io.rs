@@ -1,7 +1,9 @@
 use arrayfire::{Dim4, Array, HasAfEnum};
 use num::{Float, Complex};
 use ndarray_npy::WritableElement;
-use super::error::MSMError;
+use super::error::RuntimeError;
+use anyhow::{Result, Context};
+
 
 
 /// This function writes an arrayfire array to disk in .npy format. It first hosts the
@@ -10,7 +12,7 @@ pub fn complex_array_to_disk<T>(
     name: &str,
     array: &Array<Complex<T>>,
     shape: [u64; 4],
-) -> Result<(), MSMError>
+) -> Result<()>
 where
     T: Float + HasAfEnum + WritableElement,
     Complex<T>: HasAfEnum,
@@ -39,9 +41,9 @@ where
      use ndarray_npy::NpzWriter;
      use std::fs::File;
      let mut npz = NpzWriter::new(File::create(path).unwrap());
-     npz.add_array("real", &real);
-     npz.add_array("imag", &imag);
-     npz.finish();
+     npz.add_array("real", &real).context(RuntimeError::IOError)?;
+     npz.add_array("imag", &imag).context(RuntimeError::IOError)?;
+     npz.finish().context(RuntimeError::IOError)?;
      Ok(())
 }
 
@@ -50,7 +52,7 @@ pub fn array_to_disk<T>(
     name: &str,
     array: &Array<T>,
     shape: [u64; 4],
-) -> Result<(), MSMError>
+) -> Result<()>
 where
     T: Float + HasAfEnum + WritableElement,
 {
@@ -67,8 +69,8 @@ where
      use ndarray_npy::NpzWriter;
      use std::fs::File;
      let mut npz = NpzWriter::new(File::create(path).unwrap());
-     npz.add_array(name, &host);
-     npz.finish();
+     npz.add_array(name, &host).context(RuntimeError::IOError)?;
+     npz.finish().context(RuntimeError::IOError)?;
      Ok(())
 }
 
