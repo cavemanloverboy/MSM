@@ -16,8 +16,8 @@ use rand_distr::{Poisson, Distribution};
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
 pub fn cold_gauss<T, const K: usize, const S: usize>(
-    mean: [T; 3],
-    std: [T; 3],
+    mean: [T; K],
+    std: [T; K],
     params: SimulationParameters<T, K, S>,
 ) -> SimulationObject<T, K, S>
 where
@@ -46,31 +46,46 @@ where
     debug_assert!(check_norm::<T, K>(&ψx, params.dx));
 
     // Construct ψy
-    let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
-    for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
-        *ψy_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((y[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
-            T::zero(),
-        );
+    let mut ψy;
+    if K >= 2 {
+        let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+        for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
+            *ψy_val = Complex::<T>::new(
+                (T::from_f64(-0.5).unwrap() * ((y[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
+                T::zero(),
+            );
+        }
+
+        let y_dims = Dim4::new(&[1, S as u64, 1, 1]);
+        ψy = Array::new(&ψy_values, y_dims);
+        normalize::<T, K>(&mut ψy, params.dx);
+        debug_assert!(check_norm::<T, K>(&ψy, params.dx));
+    } else {
+        let y_dims = Dim4::new(&[1, 1, 1, 1]);
+        ψy = Array::new(&[Complex::<T>::new(T::one(), T::zero())], y_dims);
     }
-    let y_dims = Dim4::new(&[1, S as u64, 1, 1]);
-    let mut ψy = Array::new(&ψy_values, y_dims);
-    normalize::<T, K>(&mut ψy, params.dx);
-    debug_assert!(check_norm::<T, K>(&ψy, params.dx));
+
 
 
     // Construct ψz
-    let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
-    for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
-        *ψz_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((z[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
-            T::zero(),
-        );
+    let mut ψz;
+    if K == 3 {
+        let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+        for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
+            *ψz_val = Complex::<T>::new(
+                (T::from_f64(-0.5).unwrap() * ((z[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
+                T::zero(),
+            );
+        }
+        let z_dims = Dim4::new(&[1, 1, S as u64, 1]);
+        ψz = Array::new(&ψz_values, z_dims);
+        normalize::<T, K>(&mut ψz, params.dx);
+        debug_assert!(check_norm::<T, K>(&ψz, params.dx));
+    } else {
+        let z_dims = Dim4::new(&[1, 1, 1, 1]);
+        ψz = Array::new(&[Complex::<T>::new(T::one(), T::zero())], z_dims);
     }
-    let z_dims = Dim4::new(&[1, 1, S as u64, 1]);
-    let mut ψz = Array::new(&ψz_values, z_dims);
-    normalize::<T, K>(&mut ψz, params.dx);
-    debug_assert!(check_norm::<T, K>(&ψz, params.dx));
+    
 
 
     // Construct ψ
@@ -99,8 +114,8 @@ where
 }
 
 pub fn cold_gauss_kspace<T, const K: usize, const S: usize>(
-    mean: [T; 3],
-    std: [T; 3],
+    mean: [T; K],
+    std: [T; K],
     params: SimulationParameters<T, K, S>,
 ) -> SimulationObject<T, K, S>
 where
@@ -127,31 +142,43 @@ where
     debug_assert!(check_norm::<T, K>(&ψx, params.dk));
 
     // Construct ψy
-    let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
-    for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
-        *ψy_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((ky[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
-            T::zero(),
-        );
+    let mut ψy;
+    if K >= 2 {
+        let mut ψy_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+        for (i, ψy_val) in ψy_values.iter_mut().enumerate(){
+            *ψy_val = Complex::<T>::new(
+                (T::from_f64(-0.5).unwrap() * ((ky[i] - mean[1]) / std[1]).powf(T::from_f64(2.0).unwrap())).exp(),
+                T::zero(),
+            );
+        }
+        let y_dims = Dim4::new(&[1, S as u64, 1, 1]);
+        ψy = Array::new(&ψy_values, y_dims);
+        normalize::<T, K>(&mut ψy, params.dk);
+        debug_assert!(check_norm::<T, K>(&ψy, params.dk));
+    } else {
+        let y_dims = Dim4::new(&[1, 1, 1, 1]);
+        ψy = Array::new(&[Complex::<T>::new(T::one(), T::zero())], y_dims);
     }
-    let y_dims = Dim4::new(&[1, S as u64, 1, 1]);
-    let mut ψy = Array::new(&ψy_values, y_dims);
-    normalize::<T, K>(&mut ψy, params.dk);
-    debug_assert!(check_norm::<T, K>(&ψy, params.dk));
 
 
     // Construct ψz
-    let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
-    for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
-        *ψz_val = Complex::<T>::new(
-            (T::from_f64(-0.5).unwrap() * ((kz[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
-            T::zero(),
-        );
+    let mut ψz;
+    if K == 3 {
+        let mut ψz_values = [Complex::<T>::new(T::zero(), T::zero()); S];
+        for (i, ψz_val) in ψz_values.iter_mut().enumerate(){
+            *ψz_val = Complex::<T>::new(
+                (T::from_f64(-0.5).unwrap() * ((kz[i] - mean[2]) /std[2]).powf(T::from_f64(2.0).unwrap())).exp(),
+                T::zero(),
+            );
+        }
+        let z_dims = Dim4::new(&[1, 1, S as u64, 1]);
+        ψz = Array::new(&ψz_values, z_dims);
+        normalize::<T, K>(&mut ψz, params.dk);
+        debug_assert!(check_norm::<T, K>(&ψz, params.dk));
+    } else {
+        let z_dims = Dim4::new(&[1, 1, 1, 1]);
+        ψz = Array::new(&[Complex::<T>::new(T::one(), T::zero())], z_dims);
     }
-    let z_dims = Dim4::new(&[1, 1, S as u64, 1]);
-    let mut ψz = Array::new(&ψz_values, z_dims);
-    normalize::<T, K>(&mut ψz, params.dk);
-    debug_assert!(check_norm::<T, K>(&ψz, params.dk));
 
 
     // Construct ψ in k space by multiplying the x, y, z functions just constructed.
@@ -202,8 +229,8 @@ where
 }
 
 pub fn cold_gauss_kspace_sample<T, const K: usize, const S: usize>(
-    mean: [T; 3],
-    std: [T; 3],
+    mean: [T; K],
+    std: [T; K],
     params: SimulationParameters<T, K, S>,
     scheme: SamplingScheme,
 ) -> SimulationObject<T, K, S>
@@ -386,7 +413,7 @@ fn test_cold_gauss_initialization() {
 
     // Simulation parameters
     const K: usize = 3;
-    const S: usize = 128;
+    const S: usize = 512;
     let axis_length = 1.0;
     let time = 1.0;
     let total_sim_time = 1.0;

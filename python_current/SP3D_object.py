@@ -141,7 +141,7 @@ class SP3D(object):
 		u.readyDir(ofile_sim, self.tag)
 
 	def dropData(self,i,ofile_):
-		np.save("../" + ofile_ + "/" + self.tag + "/" + "drop" + str(i) + ".npy", self.psi)
+		np.save("../Data/" + ofile_ + "/" + self.tag + "/" + "drop" + str(i) + ".npy", self.psi)
 
 	def update(self, T_f):
 
@@ -281,7 +281,7 @@ class SP3D_cp(object):
 		u.readyDir(ofile_sim, self.tag)
 
 	def dropData(self,i,ofile_):
-		np.save("../" + ofile_ + "/" + self.tag + "/" + "drop" + str(i) + ".npy", cp.asnumpy(self.psi))
+		np.save("../Data/" + ofile_ + "/" + self.tag + "/" + "drop" + str(i) + ".npy", cp.asnumpy(self.psi))
 
 	def update(self, T_f):
 

@@ -1,11 +1,12 @@
 //use msm::run_simulation;
-use arrayfire::set_device;
+use arrayfire::{set_device,device_info};
 use msm::simulation_object::*;
 use msm::ics;
 
 fn main() {
 
      set_device(0);
+     device_info();
 
      // Set size
      const K: usize = 3;
@@ -28,7 +29,7 @@ fn main() {
      let time: T = 0.0;
      let cfl: T = 0.40;
      let num_data_dumps: u32 = 200;
-     let total_mass: f64 = 1e14;
+     let total_mass: f64 = 1e14 *1e1;
      let particle_mass: f64 = msm::constants::HBAR / hbar_.unwrap();
      let sim_name: String = format!("bose-star-{}", S);
      let total_sim_time: T = 625.0;
@@ -60,9 +61,9 @@ fn main() {
      println!("dτ = {:e}, χ = {:e}, ΔT = {:e}", dτ, χ, total_sim_time);
 
      // Gaussian Parameters
-     let v0 = 0.03;
+     let k_width: T = 0.03 / hbar_.unwrap() as T;
      let mean: [T; 3] = [0.0; 3];
-     let std: [T; 3] = [v0; 3];
+     let std: [T; 3] = [k_width; 3];
 
      // Construct SimulationObject
      let mut simulation_object = {
