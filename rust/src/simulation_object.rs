@@ -74,6 +74,8 @@ pub struct SimulationParameters<U: Float + FloatingPoint, const K: usize, const 
     pub particle_mass: f64,
     /// HBAR tilde (HBAR / particle_mass)
     pub hbar_: U,
+    /// Total number of particles
+    pub n_tot: f64,
 
     // Simulation parameters and metadata
     /// Simulation name
@@ -166,6 +168,8 @@ where
         let k2_max: U = max_all(&spec_grid).0;
         let sim_wall_time = 0;
 
+        let n_tot = total_mass / particle_mass;
+
         SimulationParameters {
             axis_length,
             dx,
@@ -185,27 +189,32 @@ where
             spec_grid,
             k2_max,
             sim_wall_time,
+            n_tot,
         }
     }
 }
 impl<U, const K: usize, const S: usize> Display for SimulationParameters<U, K, S>
 where
-    U: ValueFrom<u32> + ValueFrom<f64> + Float + FloatingPoint + Display
+    U: Float + FloatingPoint + Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}\n","-".repeat(40))?;
-        write!(f, "axis_length    = {}\n", self.axis_length)?;
-        write!(f, "dx             = {}\n", self.dx)?;
-        write!(f, "dk             = {}\n", self.dk)?;
-        write!(f, "current_time   = {}\n", self.time)?;
-        write!(f, "total_sim_time = {}\n", self.total_sim_time)?;
-        write!(f, "cfl            = {}\n", self.cfl)?;
-        write!(f, "num_data_dumps = {}\n", self.num_data_dumps)?;
-        write!(f, "total_mass     = {}\n", self.total_mass)?;
-        write!(f, "particle_mass  = {}\n", self.particle_mass)?;
-        write!(f, "hbar_          = {}\n", self.hbar_)?;
-        write!(f, "sim_name       = {}\n", self.sim_name,)?;
-        write!(f, "{}\n","-".repeat(40))?;
+        //write!(f, "{}\n","-".repeat(40))?;
+        write!(f, "axis_length     = {}\n", self.axis_length)?;
+        write!(f, "dx              = {}\n", self.dx)?;
+        write!(f, "dk              = {}\n", self.dk)?;
+        write!(f, "initial_time    = {}\n", self.time)?;
+        write!(f, "total_sim_time  = {}\n", self.total_sim_time)?;
+        write!(f, "cfl             = {}\n", self.cfl)?;
+        write!(f, "num_data_dumps  = {}\n", self.num_data_dumps)?;
+        write!(f, "total_mass      = {}\n", self.total_mass)?;
+        write!(f, "particle_mass   = {}\n", self.particle_mass)?;
+        write!(f, "hbar_           = {}\n", self.hbar_)?;
+        write!(f, "sim_name        = {}\n", self.sim_name)?;
+        write!(f, "k2_cutoff       = {}\n", self.k2_cutoff)?;
+        write!(f, "alias_threshold = {}\n", self.alias_threshold)?;
+        write!(f, "k2_max          = {}\n", self.k2_max)?;
+        write!(f, "n_tot           = {}\n", self.n_tot)?;
+        //write!(f, "{}\n","-".repeat(40))?;
         Ok(())
     }
 }
@@ -489,6 +498,20 @@ where
     /// This function checks if simulation is done
     pub fn not_finished(&self) -> bool {
         self.parameters.time < self.parameters.total_sim_time
+    }
+
+
+    /// This function outputs a text file
+    pub fn dump_parameters(&self) {
+
+        // Create directory if necessary
+        std::fs::create_dir_all(format!("sim_data/{}/", self.parameters.sim_name)).expect("failed to make directory");
+
+        // Location of parameter file
+        let param_file: String = format!("sim_data/{}/parameters.txt", self.parameters.sim_name);
+
+        // Write to parameter file
+        std::fs::write(param_file, format!("{}", self.parameters)).expect("Failed to write parameter file");
     }
 
     /// This function checks the Fourier space wavefunction for aliasing
