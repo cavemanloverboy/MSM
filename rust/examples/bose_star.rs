@@ -75,8 +75,9 @@ fn main() {
      
      debug_assert!(msm::utils::grid::check_complex_for_nans(&simulation_object.grid.ψ));
 
+     let verbose = false;
      while simulation_object.not_finished() {
-          simulation_object.update().expect("failed to update");
+          simulation_object.update(verbose).expect("failed to update");
      }
      assert!(!!!simulation_object.not_finished())
 }

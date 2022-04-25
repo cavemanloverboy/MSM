@@ -268,7 +268,7 @@ where
     }
 
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
-    pub fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self, verbose: bool) -> Result<()> {
 
         // Begin timer for update loop
         let now = Instant::now();
@@ -345,7 +345,7 @@ where
 
         // Print estimate of time to completion
         let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.total_sim_time - self.parameters.time)/dt)).unwrap_or(1);
-        println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));
+        if verbose {println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));}
 
         // Check for Fourier Aliasing
         let aliased = self.check_alias();
