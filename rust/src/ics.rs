@@ -207,7 +207,7 @@ where
     );
     debug_assert!(check_norm::<T, K>(&ψ, params.dk));
     forward_inplace::<T, K, S>(&mut ψ).expect("failed k-space -> spatial fft in cold gaussian kspace ic initialization");
-    //normalize::<T, K>(&mut ψ, params.dx);
+    normalize::<T, K>(&mut ψ, params.dx);
     debug_assert!(check_norm::<T, K>(&ψ, params.dx));
 
 
@@ -379,7 +379,7 @@ where
             let ψ_ = add(&ψ_count, &samples, false);
 
             // Finally, move data into ψ after converting count -> density
-            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()).sqrt(), T::zero()), true);
         }
     }
 }
