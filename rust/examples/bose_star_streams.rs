@@ -27,6 +27,10 @@ fn main() {
 
 
      for stream in 0..NSTREAMS {
+     
+          println!("Working on stream {}", stream);
+          let now = Instant::now();
+
           // Simulation Parameters
           let axis_length: T = 10.0; 
           let time: T = 0.0;
@@ -69,13 +73,21 @@ fn main() {
           let std: [T; 3] = [k_width; 3];
 
           // Construct SimulationObject
+          let phase_seed = Some(0);
+          let sample_seed = Some(stream);
           let mut simulation_object = {
-                    ics::cold_gauss_kspace::<T, K, S>(mean, std, params)
+                    ics::cold_gauss_kspace_sample::<T, K, S>(mean, std, params, phase_seed, sample_seed)
           };
+
+          // Define additional parameters
+          let additional_parameters: Vec<String> = vec![
+               format!("phase_seed          = {}\n", phase_seed.unwrap())
+               format!("sample_seed         = {}\n", sample_seed.unwrap())
+          ];
 
           // Dump initial conditions and parameter file
           simulation_object.dump();
-          simulation_object.dump_parameters();
+          simulation_object.dump_parameters(additional_parameters);
           
           debug_assert!(msm::utils::grid::check_complex_for_nans(&simulation_object.grid.ψ));
 
@@ -83,5 +95,7 @@ fn main() {
                simulation_object.update().expect("failed to update");
           }
           assert!(!!!simulation_object.not_finished())
+
+          println("Finished stream {} in {} seconds", stream, now.elapsed().as_millis()/1000);
      }
 }

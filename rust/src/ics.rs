@@ -117,6 +117,7 @@ pub fn cold_gauss_kspace<T, const K: usize, const S: usize>(
     mean: [T; K],
     std: [T; K],
     params: SimulationParameters<T, K, S>,
+    seed: Option<u64>,
 ) -> SimulationObject<T, K, S>
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + std::fmt::LowerExp,
@@ -188,7 +189,7 @@ where
     debug_assert!(check_norm::<T, K>(&ψ, params.dk));
 
     // Multiply random phases and then fft to get spatial ψ
-    let seed = Some(0);
+    let seed = Some(seed.unwrap_or(0));
     let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, seed);
     let ψ_dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
     let mut ψ = mul(
@@ -207,7 +208,7 @@ where
     );
     debug_assert!(check_norm::<T, K>(&ψ, params.dk));
     forward_inplace::<T, K, S>(&mut ψ).expect("failed k-space -> spatial fft in cold gaussian kspace ic initialization");
-    normalize::<T, K>(&mut ψ, params.dx);
+    //normalize::<T, K>(&mut ψ, params.dx);
     debug_assert!(check_norm::<T, K>(&ψ, params.dx));
 
 
@@ -233,14 +234,16 @@ pub fn cold_gauss_kspace_sample<T, const K: usize, const S: usize>(
     std: [T; K],
     params: SimulationParameters<T, K, S>,
     scheme: SamplingScheme,
+    phase_seed: Option<u64>,
+    sample_seed: Option<u64>,
 ) -> SimulationObject<T, K, S>
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst + std::fmt::LowerExp,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + Default + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
     rand_distr::Standard: Distribution<T>
 {
-    let mut simulation_object = cold_gauss_kspace::<T, K, S>(mean, std, params);
-    sample_quantum_perturbation::<T, K, S>(&mut simulation_object.grid, &simulation_object.parameters, scheme);
+    let mut simulation_object = cold_gauss_kspace::<T, K, S>(mean, std, params, phase_seed);
+    sample_quantum_perturbation::<T, K, S>(&mut simulation_object.grid, &simulation_object.parameters, scheme, sample_seed);
     simulation_object
 }
 
@@ -250,6 +253,7 @@ pub fn sample_quantum_perturbation<T, const K: usize, const S: usize>(
     grid: &mut SimulationGrid<T, K, S>,
     parameters: &SimulationParameters<T, K, S>,
     scheme: SamplingScheme,
+    seed: Option<u64>,
 )
 where 
     T: Display + Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + FloatConst + ToPrimitive + std::fmt::LowerExp,
@@ -271,7 +275,7 @@ where
     );
 
     // RNG engine
-    let seed = Some(0);
+    let seed = Some(seed.unwrap_or(0));
     let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, seed);
 
     match scheme {
@@ -349,7 +353,7 @@ where
             let ψ_ = add(&ψ_count, &samples, false);
 
             // Finally, move data into ψ
-            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()), T::zero()), true);
+            *ψ = div(&ψ_, &Complex::<T>::new(parameters.dx.powf(T::from_usize(K).unwrap()).sqrt(), T::zero()), true);
         },
 
         SamplingScheme::Husimi => {
