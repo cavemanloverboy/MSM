@@ -344,7 +344,7 @@ where
             // Scale the samples
             samples = div(
                 &samples, 
-                &Complex::<T>::new(sqrt_n*T::from_f64(1.0/2.0).unwrap(), T::zero()),
+                &Complex::<T>::new(sqrt_n*T::from_f64(2.0).unwrap(), T::zero()),
                 true
             );
 
@@ -375,7 +375,7 @@ where
             // Scale the samples
             samples = div(
                 &samples, 
-                &Complex::<T>::new(sqrt_n*T::from_f64(1.0/2.0).unwrap().sqrt(), T::zero()),
+                &Complex::<T>::new(sqrt_n*T::from_f64(2.0).unwrap().sqrt(), T::zero()),
                 true
             );
 
