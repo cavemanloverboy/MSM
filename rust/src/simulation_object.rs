@@ -486,7 +486,7 @@ where
 
         // Dump psi
         complex_array_to_disk(
-            format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps+1).as_str(),
+            format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps).as_str(),
             "psi",
             &self.grid.ψ,
             [shape.0, shape.1, shape.2, shape.3]
