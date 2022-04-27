@@ -25,7 +25,7 @@ fn main() {
 
 
      // Simulation Parameters
-     let axis_length: T = 10.0; 
+     let axis_length: T = 100.0; 
      let time: T = 0.0;
      let cfl: T = 0.40;
      let num_data_dumps: u32 = 200;
