@@ -25,9 +25,9 @@ fn main() {
      let hbar_ = Some(0.02);
 
      const NSTREAMS: u64 = 64;
+     let streams = (0..=NSTREAMS).map(|x| (x - 1) % (NSTREAMS + 1));
 
-
-     for stream in 0..=NSTREAMS {
+     for stream in streams {
      
           println!("Working on stream {}", stream);
           let now = Instant::now();
@@ -37,7 +37,7 @@ fn main() {
           let time: T = 0.0;
           let cfl: T = 0.40;
           let num_data_dumps: u32 = 200;
-          let total_mass: f64 = 1e14 *1e1;
+          let total_mass: f64 = 1e14 * 1e1;
           let particle_mass: f64 = msm::constants::HBAR / hbar_.unwrap();
           let sim_name: String = if stream != NSTREAMS { format!("bose-star-{}-stream{:05}", S, stream) } else { format!("bose-star-{}", S) };
           let total_sim_time: T = 625.0;
@@ -111,12 +111,12 @@ fn main() {
           
           // debug_assert!(msm::utils::grid::check_complex_for_nans(&simulation_object.grid.ψ));
 
-          // let verbose = false;
-          // while simulation_object.not_finished() {
-          //      simulation_object.update(verbose).expect("failed to update");
-          // }
-          // assert!(!!!simulation_object.not_finished());
+          let verbose = false;
+          while simulation_object.not_finished() {
+               simulation_object.update(verbose).expect("failed to update");
+          }
+          assert!(!!!simulation_object.not_finished());
 
-          println!("Finished stream {} in {} seconds", stream, now.elapsed().as_millis()/1000);
+          println!("Finished stream {} in {} seconds", stream, now.elapsed().as_secs());
      }
 }
