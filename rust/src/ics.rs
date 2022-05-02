@@ -6,7 +6,7 @@ use crate::{
         fft::{forward_inplace, get_kgrid},
     },
 };
-use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, add, mul, exp, random_uniform, conjg, arg, div, abs, Fromf64, ConstGenerator, RandomEngine, ImplicitPromote};
+use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, add, mul, exp, random_uniform, conjg, arg, div, abs, Fromf64, ConstGenerator, RandomEngine};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
 use std::fmt::Display;
@@ -351,7 +351,8 @@ where
                 &complex_constant(Complex::<T>::new(sqrt_n*T::from_f64(2.0).unwrap(), T::zero()), (1,1,1,1)),
                 true
             );
-            
+
+
             // Add them to ψ_count
             let ψ_ = add(&ψ_count, &samples, false);
 
@@ -378,10 +379,6 @@ where
                 ),
                 false
             );
-            println!("var of samples.real is {:?}", arrayfire::var_all(&arrayfire::real(&samples), false));
-            println!("var of samples.imag is {:?}", arrayfire::var_all(&arrayfire::imag(&samples), false));
-            crate::utils::io::complex_array_to_disk("normals", "", &samples, [S as u64, S as u64, S as u64, 1]);
-
 
             // Scale the samples
             samples = div(
@@ -389,10 +386,6 @@ where
                 &complex_constant(Complex::<T>::new(sqrt_n*T::from_f64(2.0).unwrap().sqrt(), T::zero()), (1,1,1,1)),
                 true
             );
-            println!("n * var of div_samples.real is {}", arrayfire::var_all(&arrayfire::real(&samples), false).0*n);
-            println!("n * var of div_samples.imag is {}", arrayfire::var_all(&arrayfire::imag(&samples), false).0*n);
-            crate::utils::io::complex_array_to_disk("normals_divided", "", &samples, [S as u64, S as u64, S as u64, 1]);
-            assert!(S == 1);
 
             // Add them to ψ_count
             let ψ_ = add(&ψ_count, &samples, false);
