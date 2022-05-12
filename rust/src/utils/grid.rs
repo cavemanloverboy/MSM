@@ -1,13 +1,17 @@
 
-use arrayfire::{Array, FloatingPoint, HasAfEnum, sum_all, conjg, mul, isnan, isinf, real, Fromf64, ComplexFloating};
+use arrayfire::{Array, FloatingPoint, HasAfEnum, ConstGenerator, sum_all, conjg, mul, isnan, isinf, real, Fromf64, ComplexFloating};
 use num::{Float, Complex, FromPrimitive, ToPrimitive};
+use ndarray_npy::{WritableElement, ReadableElement};
 use std::fmt::Display;
 use approx::{assert_abs_diff_eq};
+use serde_derive::{Serialize, Deserialize};
+use num_derive::{FromPrimitive, ToPrimitive};
 
 
-pub fn normalize<T, const K: usize>(
+pub fn normalize<T>(
     grid: &mut Array<Complex<T>>,
     dx: T,
+    dims: Dimensions,
 )
 where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64,
@@ -22,14 +26,15 @@ where
             false
         )
     );
-    let norm = vec![Complex::<T>::new((dx.powf(-T::from_usize(K).unwrap())/norm.0).sqrt(), T::zero()); grid.elements()];
+    let norm = vec![Complex::<T>::new((dx.powf(-T::from_usize(dims as usize).unwrap())/norm.0).sqrt(), T::zero()); grid.elements()];
     let norm = Array::new(&norm, grid.dims());
     *grid = mul(grid, &norm, false);
 }
 
-pub fn check_norm<T, const K: usize>(
+pub fn check_norm<T>(
     grid: &Array<Complex<T>>,
     dx: T,
+    dim: Dimensions,
 ) -> bool
 where
     T: Float + FloatingPoint + FromPrimitive + Display + HasAfEnum<BaseType = T> + HasAfEnum<AggregateOutType = T> + Fromf64 + ToPrimitive,
@@ -49,13 +54,13 @@ where
     assert_abs_diff_eq!(
         T::to_f64(
             &(
-                norm.0 * dx.powf(T::from_usize(K).unwrap())
+                norm.0 * dx.powf(T::from_usize(dim as usize).unwrap())
             )
         ).unwrap(),
         1.0,
         epsilon = 1e-4);
 
-    (norm.0*dx.powf(T::from_usize(K).unwrap()) - T::one()).abs() < T::from_f64(1e-4).unwrap()
+    (norm.0*dx.powf(T::from_usize(dim as usize).unwrap()) - T::one()).abs() < T::from_f64(1e-4).unwrap()
 }
 
 
@@ -115,18 +120,18 @@ fn test_normalize_arrayfire_array_1d() {
     // Define type, size
     type T = f32;
     const S: usize = 8;
-    const K: usize = 1;
+    const D: Dimensions = Dimensions::One;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
-    let dims = Dim4::new(&[S.pow(K as u32) as u64, 1, 1, 1]);
+    let dims = Dim4::new(&[S.pow(D as u32) as u64, 1, 1, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     //arrayfire::af_print!("normalized array", array);
 
 
@@ -136,11 +141,11 @@ fn test_normalize_arrayfire_array_1d() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
 
     assert_eq!(array.dims(), dims);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
@@ -152,18 +157,18 @@ fn test_normalize_arrayfire_array_2d() {
     // Define type, size
     type T = f32;
     const S: usize = 8;
-    const K: usize = 2;
+    const D: Dimensions = Dimensions::Two;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
     let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     //arrayfire::af_print!("normalized array", array);
 
 
@@ -173,11 +178,11 @@ fn test_normalize_arrayfire_array_2d() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
 
     assert_eq!(array.dims(), dims);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
@@ -189,18 +194,18 @@ fn test_normalize_arrayfire_array_3d() {
     // Define type, size
     type T = f32;
     const S: usize = 8;
-    const K: usize = 3;
+    const D: Dimensions = Dimensions::Three;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
     let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     //arrayfire::af_print!("normalized array", array);
 
 
@@ -210,11 +215,11 @@ fn test_normalize_arrayfire_array_3d() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
  
     assert_eq!(array.dims(), dims);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
@@ -229,18 +234,18 @@ fn test_normalize_arrayfire_array_1d_f64() {
     // Define type, size
     type T = f64;
     const S: usize = 8;
-    const K: usize = 1;
+    const D: Dimensions = Dimensions::One;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
-    let dims = Dim4::new(&[S.pow(K as u32) as u64, 1, 1, 1]);
+    let dims = Dim4::new(&[S.pow(D as u32) as u64, 1, 1, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     arrayfire::af_print!("normalized array", array);
 
 
@@ -250,11 +255,11 @@ fn test_normalize_arrayfire_array_1d_f64() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
 
     assert_eq!(array.dims(), dims);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
@@ -267,18 +272,18 @@ fn test_normalize_arrayfire_array_2d_f64() {
     // Define type, size
     type T = f64;
     const S: usize = 8;
-    const K: usize = 2;
+    const D: Dimensions = Dimensions::Two;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
     let dims = Dim4::new(&[S as u64, S as u64, 1, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     arrayfire::af_print!("normalized array", array);
 
 
@@ -288,11 +293,12 @@ fn test_normalize_arrayfire_array_2d_f64() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
 
-    assert_eq!(array.dims(), dims);
+    assert_eq!(array.dims(), dims
+);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
@@ -305,18 +311,18 @@ fn test_normalize_arrayfire_array_3d_f64() {
     // Define type, size
     type T = f64;
     const S: usize = 8;
-    const K: usize = 3;
+    const D: Dimensions = Dimensions::Three;
     let dx = 1.0 / S as T;
 
     // Define values that go into array
-    let values = [Complex::<T>::new(1.0, 1.0); S.pow(K as u32)];
+    let values = [Complex::<T>::new(1.0, 1.0); S.pow(D as u32)];
 
     // Define Array
     let dims = Dim4::new(&[S as u64, S as u64, S as u64, 1]);
     let mut array = Array::new(&values, dims);
 
 
-    normalize::<T, K>(&mut array, dx);
+    normalize::<T>(&mut array, dx, D);
     arrayfire::af_print!("normalized array", array);
 
 
@@ -326,11 +332,38 @@ fn test_normalize_arrayfire_array_3d_f64() {
             &conjg(&array),
             false
         )
-    ).0 * dx.powf(K as T);
+    ).0 * dx.powf(D as u8 as T);
  
     assert_eq!(array.dims(), dims);
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = T::from_f64(1e-6).unwrap());
-    assert!(check_norm::<T, K>(&array, dx));
+    assert!(check_norm::<T>(&array, dx, D));
 }
 
 
+#[derive(Copy, Clone, Serialize, Deserialize, FromPrimitive, ToPrimitive)]
+pub enum Dimensions {
+    One = 1,
+    Two = 2, 
+    Three = 3,
+}
+
+pub trait IntoT<T>
+{
+    fn intoT(self) -> Vec<T>;
+}
+
+impl<T> IntoT<T> for &[f64]
+where
+T: Float + FloatingPoint + Display + ToPrimitive + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + std::fmt::LowerExp,
+Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T> + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
+{
+    fn intoT(self) -> Vec<T> {
+        self.iter().map(|&x| T::from_f64(x).unwrap()).collect()
+    }
+}
+
+
+#[test]
+fn dimension_enum() {
+    let x: u8 = Dimensions::One as u8;
+}

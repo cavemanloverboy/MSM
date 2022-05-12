@@ -1,10 +1,15 @@
 use arrayfire::*;
 use num::{Complex, Float, FromPrimitive};
-use crate::utils::error::ParameterError;
+use crate::utils::{
+    error::ParameterError,
+    grid::Dimensions
+};
 use anyhow::Result;
 
-pub fn forward<T, const K: usize, const S: usize>(
-    array: &Array<Complex<T>>
+pub fn forward<T>(
+    array: &Array<Complex<T>>,
+    dims: Dimensions,
+    size: usize,
 ) -> Result<Array<Complex<T>>>
 where
     T: Float + FloatingPoint,
@@ -12,19 +17,20 @@ where
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
 {
     // Compute dimension specific normalization factor
-    let norm_factor: f64 = 1.0 / (S as f64).powf(K as f64 / 2.0);
+    let norm_factor: f64 = 1.0 / (size as f64).powf(dims as u8 as f64 / 2.0);
 
     // Handle ffts for different dimensions
-    match K {
-        1 => Ok( fft(array, norm_factor, S as i64)),
-        2 => Ok(fft2(array, norm_factor, S as i64, S as i64)),
-        3 => Ok(fft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
+    match dims {
+        Dimensions::One => Ok(fft(array, norm_factor, size as i64)),
+        Dimensions::Two => Ok(fft2(array, norm_factor, size as i64, size as i64)),
+        Dimensions::Three => Ok(fft3(array, norm_factor, size as i64, size as i64, size as i64)),
     }
 }
 
-pub fn inverse<T, const K: usize, const S: usize>(
-    array: &Array<Complex<T>>
+pub fn inverse<T>(
+    array: &Array<Complex<T>>,
+    dims: Dimensions,
+    size: usize,
 )-> Result<Array<Complex<T>>>
 where
     T: Float + FloatingPoint,
@@ -32,71 +38,77 @@ where
     <Complex<T> as arrayfire::HasAfEnum>::ComplexOutType: HasAfEnum
 {
     // Compute dimension specific normalization factor
-    let norm_factor: f64 = 1.0 / (S as f64).powf(K as f64 / 2.0);
+    let norm_factor: f64 = 1.0 / (size as f64).powf(dims as u8 as f64 / 2.0);
 
     // Handle ffts for different dimensions
-    match K {
-        1 => Ok( ifft(array, norm_factor, S as i64)),
-        2 => Ok(ifft2(array, norm_factor, S as i64, S as i64)),
-        3 => Ok(ifft3(array, norm_factor, S as i64, S as i64, S as i64)),
-        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
+    match dims {
+        Dimensions::One => Ok(ifft(array, norm_factor, size as i64)),
+        Dimensions::Two => Ok(ifft2(array, norm_factor, size as i64, size as i64)),
+        Dimensions::Three => Ok(ifft3(array, norm_factor, size as i64, size as i64, size as i64)),
     }
 }
 
-pub fn forward_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>) -> Result<()>
+pub fn forward_inplace<T>(
+    array: &mut Array<Complex<T>>,
+    dims: Dimensions,
+    size: usize,
+) -> Result<()>
 where
     T: Float,
     Complex<T>: HasAfEnum + ComplexFloating,
 {
     // Compute dimension specific normalization factor
-    let norm_factor: f64 = 1.0 / (S as f64).powf(K as f64 / 2.0);
+    let norm_factor: f64 = 1.0 / (size as f64).powf(dims as u8 as f64 / 2.0);
 
     // Handle ffts for different dimensions
-    match K {
-        1 => Ok( fft_inplace(array, norm_factor)),
-        2 => Ok(fft2_inplace(array, norm_factor)),
-        3 => Ok(fft3_inplace(array, norm_factor)),
-        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
+    match dims {
+        Dimensions::One => Ok(fft_inplace(array, norm_factor)),
+        Dimensions::Two => Ok(fft2_inplace(array, norm_factor)),
+        Dimensions::Three => Ok(fft3_inplace(array, norm_factor)),
     }
 }
 
-pub fn inverse_inplace<T, const K: usize, const S: usize>(array: &mut Array<Complex<T>>)-> Result<()>
+pub fn inverse_inplace<T>(
+    array: &mut Array<Complex<T>>,
+    dims: Dimensions,
+    size: usize,
+)-> Result<()>
 where
     T: Float,
     Complex<T>: HasAfEnum + ComplexFloating,
 {
     // Compute dimension specific normalization factor
-    let norm_factor: f64 = 1.0 / (S as f64).powf(K as f64 / 2.0);
+    let norm_factor: f64 = 1.0 / (size as f64).powf(dims as u8 as f64 / 2.0);
 
     // Handle ffts for different dimensions
-    match K {
-        1 => Ok( ifft_inplace(array, norm_factor)),
-        2 => Ok(ifft2_inplace(array, norm_factor)),
-        3 => Ok(ifft3_inplace(array, norm_factor)),
-        _ => Err(ParameterError::InvalidNumDumensions { K }.into())
+    match dims {
+        Dimensions::One => Ok(ifft_inplace(array, norm_factor)),
+        Dimensions::Two => Ok(ifft2_inplace(array, norm_factor)),
+        Dimensions::Three => Ok(ifft3_inplace(array, norm_factor)),
     }
 }
 
 
-pub fn get_kgrid<T, const S: usize>(
-    dx: T, 
-) -> [T; S]
+pub fn get_kgrid<T>(
+    dx: T,
+    size: usize,
+) -> Vec<T>
 where
     T: Float + FromPrimitive,
 {
     // Ensure grid is odd
-    assert!(S % 2 == 0);
+    assert!(size % 2 == 0);
 
     // Initialize kgrid
-    let mut kgrid = [T::zero(); S];
+    let mut kgrid = vec![T::zero(); size];
 
-    for (k, mut i) in kgrid.iter_mut().zip(0..S as i64) {
+    for (k, mut i) in kgrid.iter_mut().zip(0..size as i64) {
 
-        if i < (S as i64 / 2) {
-            *k = T::from_i64(i).unwrap() / (T::from_usize(S).unwrap() * dx);
+        if i < (size as i64 / 2) {
+            *k = T::from_i64(i).unwrap() / (T::from_usize(size).unwrap() * dx);
         } else {
-            i -= S as i64;
-            *k = T::from_i64(i).unwrap() / (T::from_usize(S).unwrap() * dx);
+            i -= size as i64;
+            *k = T::from_i64(i).unwrap() / (T::from_usize(size).unwrap() * dx);
         }
     }
 
@@ -104,31 +116,37 @@ where
 }
 
 /// This computes `k2 = sum(k_i^2)` on the grid
-pub fn spec_grid<T, const K: usize, const S: usize>(
+pub fn spec_grid<T>(
     dx: T,
-    shape: (u64, u64, u64, u64)
+    dims: Dimensions,
+    size: usize,
 ) -> Array<T>
 where
     T: HasAfEnum + Float + FromPrimitive
 {
     // Get kgrid and square
-    let kgrid_squared: Vec<T> = get_kgrid::<T, S>(dx)
+    let kgrid_squared: Vec<T> = get_kgrid::<T>(dx, size)
         .iter()
         .map(|x| *x * *x)
         .collect();
 
 
     // Construct Array full of zeros
-    let values = vec![T::zero(); S.pow(K as u32)];
-    let dims = Dim4::new(&[shape.0, shape.1, shape.2, shape.3]);
-    let mut array = Array::new(&values, dims);
+    let values = vec![T::zero(); size.pow(dims as u32)];
+    let shape = match dims {
+        Dimensions::One => (size as u64, 1, 1, 1),
+        Dimensions::Two => (size as u64, size as u64, 1, 1),
+        Dimensions::Three => (size as u64, size as u64, size as u64, 1),
+    };
+    let dim4 = Dim4::new(&[shape.0, shape.1, shape.2, shape.3]);
+    let mut array = Array::new(&values, dim4);
 
     // Sum(k_i^2)
-    for i in 0..K {
+    for i in 0..dims as usize {
         
         // Shape of broadcasting array
         let mut bcast_shape = [1, 1, 1, 1];
-        bcast_shape[i] = S as u64;
+        bcast_shape[i] = size as u64;
         let bcast_dims = Dim4::new(&bcast_shape);
 
         // Construct brodcasting array
@@ -153,30 +171,31 @@ where
 #[test]
 fn test_k_grid() {
     // Generate simple k grid and ensure it's correct
-    let k_grid = get_kgrid::<f32, 4>(0.25);
+    let k_grid = get_kgrid::<f64>(0.25, 4);
     assert_eq!(k_grid, [0.0, 1.0, -2.0, -1.0])
 }
 
 #[test]
 fn test_spec_grid() {
-    const S: usize = 4;
+    let size: usize = 4;
+    let dims = Dimensions::Three;
     // Generate simple k grid and ensure it's correct
-    let k_grid = get_kgrid::<f32, S>(0.25);
-    let spec_grid = spec_grid::<f32, 3, S>(0.25, (S as u64, S as u64, S as u64, 1));
+    let k_grid = get_kgrid::<f32>(0.25, 4);
+    let spec_grid = spec_grid::<f32>(0.25, dims, size);
 
     // Manually build array
-    let mut values = [0.0; S*S*S];
-    for i in 0..S {
-        for j in 0..S{
-            for k in 0..S {
-                let q = i + j*S + k*S*S;
+    let mut values = vec![0.0; size.pow(dims as u32)];
+    for i in 0..size {
+        for j in 0..size{
+            for k in 0..size {
+                let q = i + j*size + k*size*size;
                 values[q] = k_grid[i]*k_grid[i] + k_grid[j]*k_grid[j] + k_grid[k]*k_grid[k];
             }
         }
     }
     //let array = Array::new(&values, Dim4::new(&[S as u64, S as u64, S as u64, 1]));
 
-    let mut host = [0.0_f32; S*S*S];
+    let mut host = vec![0.0_f32; size.pow(dims as u32)];
     spec_grid.host(&mut host);
     assert_eq!(values, host)
 }
