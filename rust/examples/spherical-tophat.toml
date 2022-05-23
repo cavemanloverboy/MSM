@@ -1,0 +1,16 @@
+axis_length                 = 30
+final_sim_time              = 350
+cfl                         = 0.01
+num_data_dumps              = 200
+total_mass                  = 1e10
+#particle_mass              = None
+hbar_                       = 0.0001
+sim_name                    = "spherical-tophat"
+k2_cutoff                   = 0.95
+alias_threshold             = 0.02
+dims                        = 3
+size                        = 512
+
+ics                         = { SphericalTophat = { radius = 2.5, slope = 50, delta = 0.5 } }
+
+
