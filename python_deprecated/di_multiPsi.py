@@ -122,9 +122,6 @@ def analyze(tag = ''):
     return t, N_k, N_x, M, eigs, aa, a, psi, Q
 
 
-
-
-
 def main(name, tags = []):
     time0 = time.time()
 
