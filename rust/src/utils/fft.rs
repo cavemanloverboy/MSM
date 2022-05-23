@@ -127,7 +127,7 @@ where
     // Get kgrid and square
     let kgrid_squared: Vec<T> = get_kgrid::<T>(dx, size)
         .iter()
-        .map(|x| *x * *x)
+        .map(|x| *x * *x * T::from_f64((2.0 * std::f64::consts::PI).powf(2.0)).unwrap())
         .collect();
 
 
@@ -172,7 +172,10 @@ where
 fn test_k_grid() {
     // Generate simple k grid and ensure it's correct
     let k_grid = get_kgrid::<f64>(0.25, 4);
-    assert_eq!(k_grid, [0.0, 1.0, -2.0, -1.0])
+    assert_eq!(k_grid, [0.0, 1.0, -2.0, -1.0]);
+
+    let mut k_grid = get_kgrid::<f64>(30.0/256.0, 256);
+    println!("max is {}", k_grid.iter().fold(0.0, |acc, &x| acc.max(x)));
 }
 
 #[test]
@@ -189,7 +192,7 @@ fn test_spec_grid() {
         for j in 0..size{
             for k in 0..size {
                 let q = i + j*size + k*size*size;
-                values[q] = k_grid[i]*k_grid[i] + k_grid[j]*k_grid[j] + k_grid[k]*k_grid[k];
+                values[q] = (k_grid[i]*k_grid[i] + k_grid[j]*k_grid[j] + k_grid[k]*k_grid[k]) * ( 2.0 * std::f32::consts::PI ).powf(2.0);
             }
         }
     }

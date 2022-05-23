@@ -340,7 +340,7 @@ fn test_normalize_arrayfire_array_3d_f64() {
 }
 
 
-#[derive(Copy, Clone, Serialize, Deserialize, FromPrimitive, ToPrimitive)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, FromPrimitive, ToPrimitive, PartialEq, PartialOrd)]
 pub enum Dimensions {
     One = 1,
     Two = 2, 

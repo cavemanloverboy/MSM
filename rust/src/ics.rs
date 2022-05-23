@@ -23,15 +23,31 @@ pub enum InitialConditions {
     },
     ColdGaussMFT {
         mean: Vec<f64>,
-        std: Vec<f64>
+        std: Vec<f64>,
     },
     ColdGaussMSM {
+        mean: Vec<f64>,
+        std: Vec<f64>,
+        scheme: SamplingScheme,
+        sample_seed: Option<u64>,
+    },
+    ColdGaussKSpaceMFT {
+        mean: Vec<f64>,
+        std: Vec<f64>,
+        phase_seed: Option<u64>,
+    },
+    ColdGaussKSpaceMSM {
         mean: Vec<f64>,
         std: Vec<f64>,
         scheme: SamplingScheme,
         phase_seed: Option<u64>,
         sample_seed: Option<u64>,
     },
+    SphericalTophat {
+        radius: f64,
+        delta: f64,
+        slope: f64,
+    }
 }
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -50,7 +66,7 @@ where
 
     // Construct spatial grid
     let x: Vec<T> = (0..parameters.size)
-        .map(|i| T::from_usize(i).unwrap() * parameters.dx)
+        .map(|i| T::from_usize(2*i + 1).unwrap() * parameters.dx / T::from_f64(2.0).unwrap())
         .collect();
     let y = &x;
     let z = &x;
@@ -65,6 +81,7 @@ where
     }
     let x_dims = Dim4::new(&[parameters.size as u64, 1, 1, 1]);
     let mut ψx: Array<Complex<T>> = Array::new(&ψx_values, x_dims);
+    // crate::utils::io::complex_array_to_disk("psi_x", "", &ψx, [parameters.size as u64, 1, 1, 1]);
     normalize::<T>(&mut ψx, parameters.dx, parameters.dims);
     debug_assert!(check_norm::<T>(&ψx, parameters.dx, parameters.dims));
 
@@ -81,6 +98,7 @@ where
 
         let y_dims = Dim4::new(&[1, parameters.size as u64, 1, 1]);
         ψy = Array::new(&ψy_values, y_dims);
+        // crate::utils::io::complex_array_to_disk("psi_y", "", &ψy, [parameters.size as u64, 1, 1, 1]);
         normalize::<T>(&mut ψy, parameters.dx, parameters.dims);
         debug_assert!(check_norm::<T>(&ψy, parameters.dx, parameters.dims));
     } else {
@@ -102,6 +120,7 @@ where
         }
         let z_dims = Dim4::new(&[1, 1, parameters.size as u64, 1]);
         ψz = Array::new(&ψz_values, z_dims);
+        // crate::utils::io::complex_array_to_disk("psi_z", "", &ψz, [parameters.size as u64, 1, 1, 1]);
         normalize::<T>(&mut ψz, parameters.dx, parameters.dims);
         debug_assert!(check_norm::<T>(&ψz, parameters.dx, parameters.dims));
     } else {
@@ -113,13 +132,97 @@ where
 
     // Construct ψ
     let ψ = mul(&ψx, &ψy, true);
-    let mut ψ = mul(& ψ, &ψz, true);
+    let mut ψ = mul(&ψ, &ψz, true);
     normalize::<T>(&mut ψ, parameters.dx, parameters.dims);
     debug_assert!(check_norm::<T>(&ψ, parameters.dx, parameters.dims));
 
-    let ψk = crate::utils::fft::forward::<T>(&ψ, parameters.dims, parameters.size).unwrap();
-    debug_assert!(check_norm::<T>(&ψk, parameters.dk, parameters.dims));
+    // Add drift
+    // First, construct x-array
+    let mut x_drift_values = vec![];
+    for &x_val in &x {
+        x_drift_values.push(Complex::<T>::new(T::zero(), x_val / parameters.hbar_ * T::from_f64(30.0 / 100.0).unwrap()).exp());
+    }
+    let x_drift: Array<Complex<T>> = Array::new(&x_drift_values, Dim4::new(&[parameters.size as u64,1,1,1]));
     
+    ψ = mul(
+        &ψ,
+        &x_drift,
+        true
+    );
+    // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
+
+    SimulationObject::<T>::new_with_parameters(
+        ψ,
+        parameters.clone()
+    )
+}
+
+
+/// This function produces initial conditions corresonding to a cold initial gaussian in sp
+pub fn spherical_tophat<T>(
+    parameters: &SimulationParameters<T>,
+    radius: f64,
+    delta: f64,
+    slope: f64,
+) -> SimulationObject<T>
+where
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + std::fmt::LowerExp + FloatConst,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
+    rand_distr::Standard: Distribution<T>,
+{
+    assert_eq!(parameters.dims, Dimensions::Three, "Only 3-D is supported for the spherical tophat");
+
+    // Construct spatial grid
+    let x: Vec<T> = (0..parameters.size)
+        .map(|i| T::from_usize(2*i + 1).unwrap() * parameters.dx / T::from_f64(2.0).unwrap())
+        .collect();
+    let y = &x;
+    let z = &x;
+
+    let ramp = |r: T| -> T {
+        T::one() / (T::one() + (T::from_f64(slope).unwrap() * (r/T::from_f64(radius).unwrap() - T::one())).exp())
+    };
+    // Construct ψ
+    let mut ψ_values = vec![];
+    for i in 0..parameters.size {
+        for j in 0..parameters.size {
+            for k in 0..parameters.size {
+
+                // Calculate distance from center of box
+                let xi = x[i] - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let yj = y[j] - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let zk = z[k] - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let r = (xi*xi + yj*yj + zk*zk).sqrt();
+
+                let value = Complex::<T>::new(
+                    (T::one() + T::from_f64(delta).unwrap() * ramp(r)).sqrt(),
+                    T::zero()
+                );
+                ψ_values.push(value);
+            }
+        }
+    }
+
+    // Construct ψ
+    let mut ψ = Array::new(&ψ_values, Dim4::new(&[parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]));
+    normalize::<T>(&mut ψ, parameters.dx, parameters.dims);
+    debug_assert!(check_norm::<T>(&ψ, parameters.dx, parameters.dims));
+
+    // // Add drift
+    // // First, construct x-array
+    // let mut x_drift_values = vec![];
+    // for &x_val in &x {
+    //     x_drift_values.push(Complex::<T>::new(T::zero(), x_val / parameters.hbar_ * T::from_f64(30.0 / 100.0).unwrap()).exp());
+    // }
+    // let x_drift: Array<Complex<T>> = Array::new(&x_drift_values, Dim4::new(&[parameters.size as u64,1,1,1]));
+    
+    // ψ = mul(
+    //     &ψ,
+    //     &x_drift,
+    //     true
+    // );
+    // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
+
     SimulationObject::<T>::new_with_parameters(
         ψ,
         parameters.clone()
@@ -235,6 +338,24 @@ where
         parameters.clone()
     )
 }
+
+pub fn cold_gauss_sample<T>(
+    mean: Vec<T>,
+    std: Vec<T>,
+    parameters: &SimulationParameters<T>,
+    scheme: SamplingScheme,
+    sample_seed: Option<u64>,
+) -> SimulationObject<T>
+where
+    T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + FloatConst + std::fmt::LowerExp,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
+    rand_distr::Standard: Distribution<T>
+{
+    let mut simulation_object = cold_gauss::<T>(mean, std, parameters);
+    sample_quantum_perturbation::<T>(&mut simulation_object.grid, &simulation_object.parameters, scheme, sample_seed);
+    simulation_object
+}
+
 
 pub fn cold_gauss_kspace_sample<T>(
     mean: Vec<T>,
@@ -406,6 +527,7 @@ where
 
 pub fn user_specified_ics<T>(
     path: String,
+    params: &mut SimulationParameters<T>,
 ) -> Array<Complex<T>> 
 where 
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + ndarray_npy::ReadableElement + std::fmt::LowerExp ,
@@ -435,6 +557,17 @@ where
         "Only uniform grids are supported at this time"
     );
     let size = shape[0];
+    
+    if params.dims != dims {
+        println!("Dimensions of user-provided data do not match the dimensions specified in the toml");
+        println!("Modifying param.dims to match dimensions in provided initial conditions");
+        params.dims = dims;
+    }
+    if params.size != size {
+        println!("Size of user-provided data does not match the size specified in the toml");
+        println!("Modifying param.size to match size in provided initial conditions");
+        params.size = size;
+    }
 
     // Turn into raw vectors
     let np_real: Vec<T> = np_real.into_raw_vec();
@@ -444,7 +577,7 @@ where
 
     // Construct complex data array
     let mut data: Vec<Complex<T>> = Vec::<Complex<T>>::with_capacity(size.pow(dims as u32));
-    for (i, (&real, imag)) in np_real.iter().zip(np_imag).enumerate() {
+    for (&real, imag) in np_real.iter().zip(np_imag) {
         data.push(Complex::<T>::new(real, imag));
     }
     let dim4 = get_dim4(dims, size);

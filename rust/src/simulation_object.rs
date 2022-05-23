@@ -72,7 +72,7 @@ where
     pub ψk: Array<Complex<T>>,
 
     /// Potential
-    pub φ: Array<T>,
+    pub φ: Array<Complex<T>>,
 }
 
 
@@ -88,7 +88,7 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     pub dx: T,
     /// k-space cell size
     pub dk: T,
-    /// Fourier grid (j^2)
+    /// Fourier grid (k^2)
     pub spec_grid: Array<T>,
     /// Max of Fourier grid
     pub k2_max: T,
@@ -129,7 +129,9 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     /// Alias threshold (probability mass), in [0,1]
     pub alias_threshold: f64,
     /// Simulation wall time (millis)
-    pub sim_wall_time: u128
+    pub sim_wall_time: u128,
+    /// Number of timesteps taken
+    pub n_steps: u64,
     
 }
 
@@ -207,6 +209,7 @@ where
         let sim_wall_time = 0;
 
         let n_tot = total_mass / particle_mass;
+        let n_steps = 0;
 
         SimulationParameters {
             axis_length,
@@ -230,6 +233,15 @@ where
             n_tot,
             size,
             dims,
+            n_steps,
+        }
+    }
+
+    pub fn get_shape(&self) -> [u64; 4] {
+        match self.dims {
+            Dimensions::One => [self.size as u64, 1, 1, 1],
+            Dimensions::Two => [self.size as u64, self.size as u64, 1, 1],
+            Dimensions::Three => [self.size as u64, self.size as u64, self.size as u64, 1],
         }
     }
 }
@@ -238,11 +250,10 @@ where
     U: Float + FloatingPoint + Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        //write!(f, "{}\n","-".repeat(40))?;
+        write!(f, "{}\n","-".repeat(40))?;
         write!(f, "axis_length         = {}\n", self.axis_length)?;
         write!(f, "dx                  = {}\n", self.dx)?;
-        write!(f, "dk                  = {}\n", self.dk)?;
-        write!(f, "initial_time        = {}\n", self.time)?;
+        write!(f, "current_time        = {}\n", self.time)?;
         write!(f, "final_sim_time      = {}\n", self.final_sim_time)?;
         write!(f, "cfl                 = {}\n", self.cfl)?;
         write!(f, "num_data_dumps      = {}\n", self.num_data_dumps)?;
@@ -254,7 +265,9 @@ where
         write!(f, "alias_threshold     = {}\n", self.alias_threshold)?;
         write!(f, "k2_max              = {}\n", self.k2_max)?;
         write!(f, "n_tot               = {}\n", self.n_tot)?;
-        //write!(f, "{}\n","-".repeat(40))?;
+        write!(f, "dims                = {}\n", self.dims as usize)?;
+        write!(f, "size                = {}\n", self.size as usize)?;
+        write!(f, "{}\n","-".repeat(40))?;
         Ok(())
     }
 }
@@ -364,7 +377,7 @@ where
         }
 
         // Construct `SimulationParameters`
-        let parameters = SimulationParameters::<T>::new(
+        let mut parameters = SimulationParameters::<T>::new(
             axis_length,
             time,
             final_sim_time,
@@ -382,13 +395,28 @@ where
 
         // Construct wavefunction
         let grid: SimulationGrid::<T> = match toml.ics {
+            
+            // User-specified Initial Conditions
             InitialConditions::UserSpecified { path } 
-                => SimulationGrid::<T>::new(user_specified_ics(path)),
-            InitialConditions::ColdGaussMFT{ mean, std } 
+                => SimulationGrid::<T>::new(user_specified_ics(path, &mut parameters)),
+
+            // Real space gaussian 
+            InitialConditions::ColdGaussMFT{ mean, std} 
                 => cold_gauss::<T>(mean.intoT(), std.intoT(), &parameters).grid,
-            InitialConditions::ColdGaussMSM{ mean, std, scheme, phase_seed, sample_seed } 
+            InitialConditions::ColdGaussMSM{ mean, std, scheme, sample_seed } 
+                => cold_gauss_sample::<T>(mean.intoT(), std.intoT(), &parameters, scheme, sample_seed).grid,
+
+            // Momentum space gaussian
+            InitialConditions::ColdGaussKSpaceMFT{ mean, std, phase_seed} 
+                => cold_gauss_kspace::<T>(mean.intoT(), std.intoT(), &parameters, phase_seed).grid,
+            InitialConditions::ColdGaussKSpaceMSM{ mean, std, scheme, phase_seed, sample_seed } 
                 => cold_gauss_kspace_sample::<T>(mean.intoT(), std.intoT(), &parameters, scheme, phase_seed, sample_seed).grid,
-            _ => panic!("")
+            
+            // Spherical Tophat
+            InitialConditions::SphericalTophat{ radius, delta, slope }
+                => spherical_tophat::<T>(&parameters, radius, delta, slope).grid,
+
+            _ => todo!("You must have passed an enum for a set of ics that is not yet implemented"),
         };
 
 
@@ -407,6 +435,12 @@ where
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
     pub fn update(&mut self, verbose: bool) -> Result<()> {
 
+        // If this is the first timestep, populate the kspace grid with the correct values
+        if self.parameters.n_steps == 0 {
+            println!("Initializing k-space wavefunction");
+            self.grid.ψk = self.forward(&self.grid.ψ).unwrap();
+        };
+
         // Begin timer for update loop
         let now = Instant::now();
 
@@ -415,8 +449,8 @@ where
         debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
 
         // Calculate potential at t
-        self.grid.φ = self.calculate_potential();
-        debug_assert!(check_for_nans(&self.grid.φ));
+        self.calculate_potential();
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
         // Compute timestep
         let (dump, dt) = self.get_timestep();
 
@@ -436,8 +470,8 @@ where
         self.grid.ψ = self.inverse(&self.grid.ψk).unwrap();
         debug_assert!(check_complex_for_nans(&self.grid.ψ));
         debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
-        self.grid.φ = self.calculate_potential();
-        debug_assert!(check_for_nans(&self.grid.φ));
+        self.calculate_potential();
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
 
         // Update momentum a full-step
         // exp(-dt * φ / h_) = exp(-(dt/h_) * φ)
@@ -502,8 +536,9 @@ where
             self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
         }        
 
-        // Increment wall time counter
+        // Increment wall time counter, step counter
         self.parameters.sim_wall_time += now.elapsed().as_millis();
+        self.parameters.n_steps += 1;
         
         Ok(())
     }
@@ -514,16 +549,14 @@ where
 
         // Max kinetic dt
         // max(k^2)/2
-        let kinetic_max: T = self.parameters.k2_max / T::from_f64(2.0).unwrap();
-        // dt = (2 * pi) / (hbar_ * max(k^2/2))
-        let kinetic_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() / (kinetic_max * self.parameters.hbar_);
+        let kinetic_dt: T = self.parameters.cfl * T::from_f64(2.0).unwrap() * self.parameters.axis_length / self.parameters.k2_max.sqrt() / self.parameters.hbar_;
         debug_assert!(kinetic_dt.is_finite(), "kinetic_dt is {}; hbar_ is {}",  kinetic_dt, self.parameters.hbar_);
         debug_assert!(kinetic_dt.is_sign_positive(),  "kinetic_dt is {}; hbar_ is {}", kinetic_dt, self.parameters.hbar_);
         debug_assert!(!kinetic_dt.is_zero(), "kinetic_dt is {}; hbar_ is {}", kinetic_dt, self.parameters.hbar_);
 
         // Max potential dt
         let potential_max: T = max_all(&abs(&self.grid.φ)).0;
-        let potential_dt: T = T::from_f64(2.0 * std::f64::consts::PI).unwrap() * self.parameters.hbar_ / (potential_max);
+        let potential_dt: T = self.parameters.cfl * T::from_f64(2.0 * std::f64::consts::PI).unwrap() * self.parameters.hbar_ / ( T::from_f64(2.0).unwrap() * potential_max );
         debug_assert!(potential_dt.is_finite());
         debug_assert!(potential_dt.is_sign_positive());
         debug_assert!(!potential_dt.is_zero());
@@ -533,7 +566,7 @@ where
 
         // Take smallest of all time steps
         let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
-        //println!("kinetic/potential = {}", kinetic_dt/potential_dt);
+        // println!("kinetic = {:.4e}, potential = {:.4e} kinetic/potential = {}", kinetic_dt, potential_dt, kinetic_dt/potential_dt);
 
         // If taking time_to_next_dump, return dump flag
         let mut dump = false;
@@ -544,20 +577,30 @@ where
     }
     
     /// This function computes the shape of the grid
-    pub fn get_shape(&self) -> Result<(u64, u64, u64, u64)> {
+    pub fn get_shape(&self) -> (u64, u64, u64, u64) {
         match self.parameters.dims {
-            Dimensions::One => Ok((self.parameters.size as u64, 1, 1, 1)),
-            Dimensions::Two => Ok((self.parameters.size as u64, self.parameters.size as u64, 1, 1)),
-            Dimensions::Three => Ok((self.parameters.size as u64, self.parameters.size as u64, self.parameters.size as u64, 1)),
+            Dimensions::One => (self.parameters.size as u64, 1, 1, 1),
+            Dimensions::Two => (self.parameters.size as u64, self.parameters.size as u64, 1, 1),
+            Dimensions::Three => (self.parameters.size as u64, self.parameters.size as u64, self.parameters.size as u64, 1),
+        }
+    }
+
+    // This function computes the shape of the grid
+    pub fn get_shape_array(&self) -> [u64; 4] {
+        match self.parameters.dims {
+            Dimensions::One => [self.parameters.size as u64, 1, 1, 1],
+            Dimensions::Two => [self.parameters.size as u64, self.parameters.size as u64, 1, 1],
+            Dimensions::Three => [self.parameters.size as u64, self.parameters.size as u64, self.parameters.size as u64, 1],
         }
     }
 
     /// This function computes the space density 
-    pub fn calculate_density(&self) -> Array<T> {
+    pub fn calculate_density(&mut self) {
 
-        let rho = mul(
+        // We reuse the memory for φ
+        self.grid.φ = mul(
             &Array::new(
-                    &[T::from_f64(self.parameters.total_mass).unwrap()*self.parameters.dx.powf(T::from_usize(self.parameters.dims as usize).unwrap())],
+                    &[T::from_f64(self.parameters.total_mass).unwrap()],
                     Dim4::new(&[1, 1, 1, 1])
             ),
             &real(
@@ -568,21 +611,21 @@ where
                 )
             ),
             true
-        );
-        rho
+        ).cast();
     }
 
     /// This function calculates the potential for the stream
-    pub fn calculate_potential(&self) -> Array<T> {
+    pub fn calculate_potential(&mut self) {
 
         // Compute space density and perform inplace fft
-        let mut ρ: Array<Complex<T>> = self.calculate_density().cast();
-        debug_assert!(check_complex_for_nans(&ρ));
-        self.forward_inplace(&mut ρ).unwrap();
-        debug_assert!(check_complex_for_nans(&ρ));
+        // note: this is using memory location of self.grid.φ
+        self.calculate_density();
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
+        self.forward_potential_inplace().expect("failed to do forward fft for potential");
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
 
         // Compute potential in k-space and perform inplace inverse fft
-        let mut φ: Array<Complex<T>> = div(
+        self.grid.φ = div(
             &mul(
                 &Array::new(
                     &[Complex::<T>::new(
@@ -592,30 +635,32 @@ where
                     )],
                     Dim4::new(&[1,1,1,1])
                 ),
-                &ρ,
+                &
+                self.grid.φ,
                 true
             ),
             &self.parameters.spec_grid.cast(),
             false
         );
 
+
         // Populate 0 mode with 0.0
-        let cond = isnan(&φ);
+        let cond = isnan(&self.grid.φ);
         let value = [false];
         let cond: Array<bool> = arrayfire::eq(&cond, &Array::new(&value, Dim4::new(&[1,1,1,1])), true);
-        replace_scalar(&mut φ, &cond, 0.0);
+        replace_scalar(&mut self.grid.φ, &cond, 0.0);
 
-        self.inverse_inplace(&mut φ).unwrap();
+        self.inverse_potential_inplace().expect("failed to do inverse fft for potential");
 
-        debug_assert!(check_complex_for_nans(&φ));
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
 
-        real(&φ)
+        self.grid.φ = real(&self.grid.φ).cast();
     }
 
     /// This function writes out the wavefunction and metadata to disk
     pub fn dump(&mut self) {
 
-        let shape = self.get_shape().unwrap();
+        let shape = self.get_shape_array();
 
         // Create directory if necessary
         std::fs::create_dir_all(format!("sim_data/{}/", self.parameters.sim_name)).expect("failed to make directory");
@@ -625,7 +670,7 @@ where
             format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps).as_str(),
             "psi",
             &self.grid.ψ,
-            [shape.0, shape.1, shape.2, shape.3]
+            shape
         ).context(RuntimeError::IOError).unwrap();
         
         self.parameters.current_dumps = self.parameters.current_dumps + 1;
@@ -697,16 +742,28 @@ where
     }
 
 
-    fn forward_inplace(&self, array: &mut Array<Complex<T>>) -> Result<()> {
+    fn forward_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
         let dims = self.parameters.dims;
         let size = self.parameters.size;
         forward_inplace(array, dims, size)
     }
 
-    fn inverse_inplace(&self, array: &mut Array<Complex<T>>) -> Result<()> {
+    fn inverse_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
         let dims = self.parameters.dims;
         let size = self.parameters.size;
         inverse_inplace(array, dims, size)
+    }
+
+    fn forward_potential_inplace(&mut self) -> Result<()> {
+        let dims = self.parameters.dims;
+        let size = self.parameters.size;
+        forward_inplace(&mut self.grid.φ, dims, size)
+    }
+
+    fn inverse_potential_inplace(&mut self) -> Result<()> {
+        let dims = self.parameters.dims;
+        let size = self.parameters.size;
+        inverse_inplace(&mut self.grid.φ, dims, size)
     }
 
     fn forward(&self, array: &Array<Complex<T>>) -> Result<Array<Complex<T>>> {
@@ -815,4 +872,3 @@ fn test_lt_gt() {
     println!("lt sum is {}", arrayfire::sum_all(&array1).0);
 
 }
-

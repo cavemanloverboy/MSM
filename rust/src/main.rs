@@ -4,6 +4,8 @@ use msm::ics;
 use std::time::Instant;
 use std::convert::TryInto;
 use clap::Parser;
+use std::thread::sleep;
+use msm::constants::*;
 
 #[derive(Parser)]
 pub struct CommandLineArguments {
@@ -14,7 +16,7 @@ fn main() {
 
     // Set to gpu if available
     set_device(0);
-    device_info();
+    println!("{:?}", device_info());
 
     // Start timer
     let now = Instant::now();
@@ -28,9 +30,14 @@ fn main() {
 
     // Dump initial condition
     simulation_object.dump();
-          
+
+    // Print simulation parameters and physical constants
+    println!("Simulation Parameters\n{}", simulation_object.parameters);
+    println!("Physical Constants\nHBAR = {HBAR}\nPOIS_CONSTANT = {POIS_CONST}");
+    sleep(std::time::Duration::from_secs(5));
+
     // Main evolve loop
-    let verbose = false;
+    let verbose = true;
     while simulation_object.not_finished() {
         simulation_object.update(verbose).expect("failed to update");
     }
