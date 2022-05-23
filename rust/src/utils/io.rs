@@ -1,9 +1,10 @@
 use arrayfire::{Dim4, Array, HasAfEnum};
 use num::{Float, Complex};
-use ndarray_npy::WritableElement;
+use ndarray_npy::{WritableElement, NpzWriter};
 use super::error::RuntimeError;
 use anyhow::{Result, Context};
-
+use std::fs::File;
+use serde::de::DeserializeOwned;
 
 
 /// This function writes an arrayfire array to disk in .npy format. It first hosts the
@@ -66,8 +67,6 @@ where
      println!("host shape is now {:?}", host.shape());
  
      // Write to npz
-     use ndarray_npy::NpzWriter;
-     use std::fs::File;
      let mut npz = NpzWriter::new(File::create(path).unwrap());
      npz.add_array(name, &host).context(RuntimeError::IOError)?;
      npz.finish().context(RuntimeError::IOError)?;
@@ -87,4 +86,16 @@ pub fn array_to_dim4(
     dim4: [u64; 4],
 ) -> Dim4 {
     Dim4::new(&dim4)
+}
+
+/// This function reads toml files
+pub fn read_toml<T: DeserializeOwned>(
+    path: String
+) -> T {
+
+    // Read toml config file
+    let toml_contents: &str = &std::fs::read_to_string(path).expect("Unable to load toml and parse as string");
+
+    // Return parsed toml from str
+    toml::from_str(toml_contents).expect("Could not parse toml file contents")
 }

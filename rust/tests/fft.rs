@@ -30,14 +30,14 @@ fn test_arrayfire_1_d_inplace_c32_integration() {
     let mut array : Array<Complex<T>> = Array::new(&values, dims);
     let dx = length/S as T; // This is manually calculated to make array norm = 1
     arrayfire::af_print!("array", &array);
-    debug_assert!(check_norm::<T, K>(&array, dx));
+    debug_assert!(check_norm::<T>(&array, dx, num::FromPrimitive::from_usize(K).unwrap()));
 
     // Perform inplace FFT + inverse, ensuring normalization in kspace
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
     arrayfire::af_print!("array", &array);
     let dk = dx;//1.0/length*(S as T).sqrt();
-    debug_assert!(check_norm::<T, K>(&array, dk)); 
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    debug_assert!(check_norm::<T>(&array, dk, num::FromPrimitive::from_usize(K).unwrap())); 
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -86,8 +86,8 @@ fn test_arrayfire_1_d_inplace_c64_integration() {
     let mut array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -137,13 +137,13 @@ fn test_arrayfire_2_d_inplace_c32_integration() {
     // Initialize array
     let mut array = Array::new(&values, dims);
     let dx = 1.0/8.0; // This is manually calculated to make array norm = 1
-    //debug_assert!(check_norm::<T, K>(&array, dx));
+    //debug_assert!(check_norm::<T>(&array, d, num::FromPrimitive::from_usize(K).unwrap()));
 
     // Perform inplace FFT + inverse
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
     //arrayfire::af_print!("post fft", &array);
-    //debug_assert!(check_norm::<T, K>(&array, 1.0/0.25/16.0)); // TODO: figure out why this is 16...
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    //debug_assert!(check_norm::<T>(&array, 1.0/0.25/16.0)); // TODO: figure out why this is 1, num::FromPrimitive::from_usize(K).unwrap()...
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -192,8 +192,8 @@ fn test_arrayfire_2_d_inplace_c64_integration() {
     let mut array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -242,9 +242,9 @@ fn test_arrayfire_3_d_inplace_c32_integration() {
 
     // Perform inplace FFT + inverse
     //af_print!("orig", array);
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
     //af_print!("fwd", array);
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
     //af_print!("inv", array);
 
     // Create hosts for comparison
@@ -297,8 +297,8 @@ fn test_arrayfire_3_d_inplace_c64_integration() {
     let mut array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    forward_inplace::<T, K, S>(&mut array).expect("forward fft failed");
-    inverse_inplace::<T, K, S>(&mut array).expect("inverse fft failed");
+    forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -349,8 +349,8 @@ fn test_arrayfire_1_d_c32_integration() {
     let array : Array<Complex<T>> = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -399,8 +399,8 @@ fn test_arrayfire_1_d_c64_integration() {
     let array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -448,8 +448,8 @@ fn test_arrayfire_2_d_c32_integration() {
     let array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -498,8 +498,8 @@ fn test_arrayfire_2_d_c64_integration() {
     let array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];
@@ -548,9 +548,9 @@ fn test_arrayfire_3_d_c32_integration() {
 
     // Perform inplace FFT + inverse
     //af_print!("orig", array);
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
     //af_print!("fwd", array);
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
     //af_print!("inv", array);
 
     // Create hosts for comparison
@@ -603,8 +603,8 @@ fn test_arrayfire_3_d_c64_integration() {
     let array = Array::new(&values, dims);
 
     // Perform inplace FFT + inverse
-    let output = forward::<T, K, S>(& array).expect("forward fft failed");
-    let output = inverse::<T, K, S>(& output).expect("inverse fft failed");
+    let output = forward::<T>(& array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
+    let output = inverse::<T>(& output, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");
 
     // Create hosts for comparison
     let mut vec_array = vec![Complex::<T>::default(); SIZE];

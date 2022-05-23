@@ -7,23 +7,24 @@ fn main() {
 
      // Set size
      const K: usize = 3;
-     const S: usize = 256;
+     const S: usize = 512;
      type T = f32;
 
 
 
      // Simulation Parameters
-     let axis_length: T = 60.0; 
+     let axis_length: T = 60.0;
      let time: T = 0.0;
      let cfl: T = 0.25;
      let num_data_dumps: u32 = 200;
-     let total_mass: f64 = 1e12 * 10.0;
+     let total_mass: f64 = 1e12 * 100.0;
      let particle_mass: f64 = (1e-22)*9.0e-67;
-     let sim_name: &'static str = "cold-gauss";
+     let sim_name: String = "cold-gauss".to_string();
      let total_sim_time: T = 10.0 / (msm::constants::POIS_CONST * total_mass / (axis_length as f64).powf(3.0)).sqrt() as T;
      //let total_sim_time: T = axis_length.powf(2.0) / (msm::constants::HBAR/particle_mass) as f32 / 1000.0;//200.0; //500000.0;
      let k2_cutoff = 0.95;
      let alias_threshold = 0.02;
+     let hbar_ = None;
 
 
      let params = SimulationParameters::<T, K, S>::new(
@@ -36,7 +37,8 @@ fn main() {
           particle_mass,
           sim_name,
           k2_cutoff,
-          alias_threshold
+          alias_threshold,
+          hbar_,
      );
 
      // Overconstrained parameters
