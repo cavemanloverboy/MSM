@@ -138,17 +138,18 @@ where
 
     // Add drift
     // First, construct x-array
-    let mut x_drift_values = vec![];
-    for &x_val in &x {
-        x_drift_values.push(Complex::<T>::new(T::zero(), x_val / parameters.hbar_ * T::from_f64(30.0 / 100.0).unwrap()).exp());
-    }
-    let x_drift: Array<Complex<T>> = Array::new(&x_drift_values, Dim4::new(&[parameters.size as u64,1,1,1]));
+    // let mut x_drift_values = vec![];
+    // let v_drift = T::from_f64(100.0 * 2.0 * std::f64::consts::PI).unwrap() * parameters.hbar_ / parameters.axis_length;
+    // for &x_val in &x {
+    //     x_drift_values.push(Complex::<T>::new(T::zero(), x_val / parameters.hbar_ * v_drift).exp());
+    // }
+    // let x_drift: Array<Complex<T>> = Array::new(&x_drift_values, Dim4::new(&[parameters.size as u64,1,1,1]));
     
-    ψ = mul(
-        &ψ,
-        &x_drift,
-        true
-    );
+    // ψ = mul(
+    //     &ψ,
+    //     &x_drift,
+    //     true
+    // );
     // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
 
     SimulationObject::<T>::new_with_parameters(
