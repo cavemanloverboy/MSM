@@ -1,6 +1,5 @@
 use num::{Complex, Float};
 use arrayfire::{Array, HasAfEnum, FloatingPoint, Dim4};
-use std::fmt::Display;
 
 
 pub fn complex_constant<T>(

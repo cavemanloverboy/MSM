@@ -534,7 +534,7 @@ where
     T: Float + FloatingPoint + FromPrimitive + Display + Fromf64 + ConstGenerator<OutType=T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + ndarray_npy::WritableElement + ndarray_npy::ReadableElement + std::fmt::LowerExp ,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<AbsOutType = T>  + HasAfEnum<BaseType = T>,
 {
-    use ndarray::{Array1, Array2, Array3, ArrayBase};
+    use ndarray::ArrayBase;
     use ndarray_npy::NpzReader;
     use std::fs::File;
 

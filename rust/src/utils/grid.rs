@@ -111,7 +111,6 @@ where
     !is_bad
 }
 
-
 #[test]
 fn test_normalize_arrayfire_array_1d() {
 
@@ -349,15 +348,16 @@ pub enum Dimensions {
 
 pub trait IntoT<T>
 {
-    fn intoT(self) -> Vec<T>;
+    fn into_t(self) -> Vec<T>;
 }
+
 
 impl<T> IntoT<T> for &[f64]
 where
 T: Float + FloatingPoint + Display + ToPrimitive + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + std::fmt::LowerExp,
 Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T> + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T>,
 {
-    fn intoT(self) -> Vec<T> {
+    fn into_t(self) -> Vec<T> {
         self.iter().map(|&x| T::from_f64(x).unwrap()).collect()
     }
 }

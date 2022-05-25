@@ -1,7 +1,6 @@
 use arrayfire::*;
 use num::{Complex, Float, FromPrimitive};
 use crate::utils::{
-    error::ParameterError,
     grid::Dimensions
 };
 use anyhow::Result;

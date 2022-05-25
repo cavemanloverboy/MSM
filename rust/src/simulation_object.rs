@@ -5,7 +5,7 @@ use arrayfire::{
 use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
-        grid::{check_complex_for_nans, check_for_nans, check_norm, Dimensions, IntoT},
+        grid::{check_complex_for_nans, check_norm, Dimensions, IntoT},
         fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid},
         complex::complex_constant,
         io::{complex_array_to_disk, read_toml},
@@ -20,12 +20,12 @@ use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use std::time::Instant;
 use serde_derive::Deserialize;
 use num_traits::FloatConst;
+use futures::executor::block_on;
 
 
 #[derive(Deserialize)]
 struct TomlParameters {
     
-    // Required Parameters
     /// Physical length of box
     pub axis_length: f64,
     /// Start (and current) time of simulation
@@ -40,6 +40,8 @@ struct TomlParameters {
     pub total_mass: f64,
     /// Particle mass (use this or hbar_ = HBAR / particle_mass)
     pub particle_mass: Option<f64>,
+    /// Specify number of particles. If this is used, `particle_mass` is ignored and HBAR const is ignored.
+    pub ntot: Option<f64>,
     /// HBAR / particle mass (use this or particle_mass)
     pub hbar_: Option<f64>,
     /// Name of simulation (used for directories)
@@ -344,6 +346,7 @@ where
     }
 
     /// A constructor function which returns a `SimulationObject` from a user's toml.
+    #[allow(unreachable_patterns)]
     pub fn new_from_toml(
         path: String,
     ) -> Self {
@@ -366,14 +369,19 @@ where
         // Overdetermined
         let particle_mass;
         let hbar_;
-        if toml.particle_mass.is_some() {
-            assert!(toml.hbar_.is_none(), "Cannot specify hbar_ and particle_mass");
-            particle_mass = toml.particle_mass.unwrap();
-            hbar_ = HBAR / particle_mass;
+        if toml.ntot.is_some() {
+            particle_mass = toml.total_mass / toml.ntot.unwrap();
+            hbar_ = toml.hbar_.expect("hbar_ must be specified if ntot is specified");
         } else {
-            assert!(toml.hbar_.is_some(), "Must specify hbar_ or particle_mass");
-            hbar_ = toml.hbar_.unwrap();
-            particle_mass = HBAR / hbar_ ;
+            if toml.particle_mass.is_some() {
+                assert!(toml.hbar_.is_none(), "Cannot specify hbar_ and particle_mass");
+                particle_mass = toml.particle_mass.unwrap();
+                hbar_ = HBAR / particle_mass;
+            } else {
+                assert!(toml.hbar_.is_some(), "Must specify hbar_ or particle_mass");
+                hbar_ = toml.hbar_.unwrap();
+                particle_mass = HBAR / hbar_ ;
+            }
         }
 
         // Construct `SimulationParameters`
@@ -402,15 +410,15 @@ where
 
             // Real space gaussian 
             InitialConditions::ColdGaussMFT{ mean, std} 
-                => cold_gauss::<T>(mean.intoT(), std.intoT(), &parameters).grid,
+                => cold_gauss::<T>(mean.into_t(), std.into_t(), &parameters).grid,
             InitialConditions::ColdGaussMSM{ mean, std, scheme, sample_seed } 
-                => cold_gauss_sample::<T>(mean.intoT(), std.intoT(), &parameters, scheme, sample_seed).grid,
+                => cold_gauss_sample::<T>(mean.into_t(), std.into_t(), &parameters, scheme, sample_seed).grid,
 
             // Momentum space gaussian
             InitialConditions::ColdGaussKSpaceMFT{ mean, std, phase_seed} 
-                => cold_gauss_kspace::<T>(mean.intoT(), std.intoT(), &parameters, phase_seed).grid,
+                => cold_gauss_kspace::<T>(mean.into_t(), std.into_t(), &parameters, phase_seed).grid,
             InitialConditions::ColdGaussKSpaceMSM{ mean, std, scheme, phase_seed, sample_seed } 
-                => cold_gauss_kspace_sample::<T>(mean.intoT(), std.intoT(), &parameters, scheme, phase_seed, sample_seed).grid,
+                => cold_gauss_kspace_sample::<T>(mean.into_t(), std.into_t(), &parameters, scheme, phase_seed, sample_seed).grid,
             
             // Spherical Tophat
             InitialConditions::SphericalTophat{ radius, delta, slope }
@@ -532,7 +540,14 @@ where
 
         // Perform data dump if appropriate
         if dump {
+
+            // Increment before dump for proper dump name
+            self.parameters.current_dumps = self.parameters.current_dumps + 1;
+
+            // Dump wavefunction
             self.dump();
+
+            // TODO: fix for initial_time != 0
             self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
         }        
 
@@ -562,15 +577,16 @@ where
         debug_assert!(!potential_dt.is_zero());
 
         // Time to next data dump
-        let time_to_next_dump = T::from_u32(self.parameters.current_dumps + 1).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap() - self.parameters.time; 
+        // TODO: fix for initial_time != 0
+        let time_to_next_dump = (T::from_u32(self.parameters.current_dumps + 1).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap()) - self.parameters.time; 
 
         // Take smallest of all time steps
         let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
-        // println!("kinetic = {:.4e}, potential = {:.4e} kinetic/potential = {}", kinetic_dt, potential_dt, kinetic_dt/potential_dt);
+        println!("kinetic = {:.4e}; potential = {:.4e}; kinetic/potential = {}; time to next {time_to_next_dump:.4e}", kinetic_dt, potential_dt, kinetic_dt/potential_dt);
 
         // If taking time_to_next_dump, return dump flag
         let mut dump = false;
-        if dt == time_to_next_dump { dump = true; }// println!("dump dt"); }
+        if dt == time_to_next_dump { dump = true; println!("dump dt"); }
 
         // Return dump flag and timestep
         (dump, dt)
@@ -666,14 +682,11 @@ where
         std::fs::create_dir_all(format!("sim_data/{}/", self.parameters.sim_name)).expect("failed to make directory");
 
         // Dump psi
-        complex_array_to_disk(
+        block_on(complex_array_to_disk(
             format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps).as_str(),
-            "psi",
             &self.grid.ψ,
             shape
-        ).context(RuntimeError::IOError).unwrap();
-        
-        self.parameters.current_dumps = self.parameters.current_dumps + 1;
+        )).context(RuntimeError::IOError).unwrap();
     }
 
     /// This function checks if simulation is done
@@ -742,17 +755,17 @@ where
     }
 
 
-    fn forward_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
-        let dims = self.parameters.dims;
-        let size = self.parameters.size;
-        forward_inplace(array, dims, size)
-    }
+    // fn forward_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
+    //     let dims = self.parameters.dims;
+    //     let size = self.parameters.size;
+    //     forward_inplace(array, dims, size)
+    // }
 
-    fn inverse_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
-        let dims = self.parameters.dims;
-        let size = self.parameters.size;
-        inverse_inplace(array, dims, size)
-    }
+    // fn inverse_inplace(&mut self, array: &mut Array<Complex<T>>) -> Result<()> {
+    //     let dims = self.parameters.dims;
+    //     let size = self.parameters.size;
+    //     inverse_inplace(array, dims, size)
+    // }
 
     fn forward_potential_inplace(&mut self) -> Result<()> {
         let dims = self.parameters.dims;

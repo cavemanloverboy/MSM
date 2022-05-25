@@ -1,16 +1,12 @@
 use arrayfire::{Dim4, Array, HasAfEnum};
 use num::{Float, Complex};
-use ndarray_npy::{WritableElement, NpzWriter};
-use super::error::RuntimeError;
+use ndarray_npy::{WritableElement, write_npy};
 use anyhow::{Result, Context};
-use std::fs::File;
 use serde::de::DeserializeOwned;
 
-
 /// This function writes an arrayfire array to disk in .npy format. It first hosts the
-pub fn complex_array_to_disk<T>(
+pub async fn complex_array_to_disk<T>(
     path: &str,
-    name: &str,
     array: &Array<Complex<T>>,
     shape: [u64; 4],
 ) -> Result<()>
@@ -39,37 +35,29 @@ where
      //println!("host shape is now {:?}", real.shape());
  
      // Write to npz
-     use ndarray_npy::NpzWriter;
-     use std::fs::File;
-     let mut npz = NpzWriter::new(File::create(path).unwrap());
-     npz.add_array("real", &real).context(RuntimeError::IOError)?;
-     npz.add_array("imag", &imag).context(RuntimeError::IOError)?;
-     npz.finish().context(RuntimeError::IOError)?;
-     Ok(())
+    //  let mut npz = NpzWriter::new(File::create(path).unwrap());
+    //  npz.add_array("real", &real).context(RuntimeError::IOError)?;
+    //  npz.add_array("imag", &imag).context(RuntimeError::IOError)?;
+    //  npz.finish().context(RuntimeError::IOError)?;
+
+    let real_path = format!("{}_real", path);
+    let imag_path = format!("{}_imag", path);
+    let real = array_to_disk(real_path, &real);
+    let imag = array_to_disk(imag_path, &imag);
+    futures::join!(real, imag).expect("write to disk in parallel failed");
+
+    Ok(())
 }
 
-pub fn array_to_disk<T>(
-    path: &str,
-    name: &str,
-    array: &Array<T>,
-    shape: [u64; 4],
+async fn array_to_disk<T>(
+    path: String,
+    array: &ndarray::Array4<T>,
 ) -> Result<()>
 where
     T: Float + HasAfEnum + WritableElement,
 {
-     // Host array
-     let mut host = vec![T::one(); array.elements()];
-     array.host(&mut host);
- 
-     // Build nd_array for npy serialization
-     let host: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(host);
-     let host = host.into_shape(array_to_tuple(shape)).unwrap();
-     println!("host shape is now {:?}", host.shape());
- 
-     // Write to npz
-     let mut npz = NpzWriter::new(File::create(path).unwrap());
-     npz.add_array(name, &host).context(RuntimeError::IOError)?;
-     npz.finish().context(RuntimeError::IOError)?;
+     // Write to npy
+     write_npy(path, array).expect("write to disk failed");
      Ok(())
 }
 
@@ -94,7 +82,7 @@ pub fn read_toml<T: DeserializeOwned>(
 ) -> T {
 
     // Read toml config file
-    let toml_contents: &str = &std::fs::read_to_string(path).expect("Unable to load toml and parse as string");
+    let toml_contents: &str = &std::fs::read_to_string(&path).expect(format!("Unable to load toml and parse as string: {}", &path).as_str());
 
     // Return parsed toml from str
     toml::from_str(toml_contents).expect("Could not parse toml file contents")

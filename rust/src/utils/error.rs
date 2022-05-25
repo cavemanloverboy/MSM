@@ -1,15 +1,6 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[allow(non_snake_case)]
-pub enum ParameterError {
-    #[error("Invalid number of dimensions (expected 1, 2, 3, got {K:?}")]
-    InvalidNumDumensions {
-        K: usize 
-    },
-}
-
-#[derive(Error, Debug)]
 pub enum RuntimeError {
 
     #[error("Failed to write to disk")]
