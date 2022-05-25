@@ -7,7 +7,7 @@ from pqdm.processes import pqdm
 from time import time
 
 sim = "sim_data/bose-star-512-stream00001/psi*"
-sim = "sim_data/gaussian-overdensity-512-mft/psi*"
+sim = "sim_data/gaussian-overdensity-512-mft/psi_?????"
 # sim = "sim_data/spherical-tophat/psi*"
 drops = np.sort(glob.glob(sim))
 
@@ -15,8 +15,8 @@ fps = 30
 
 def write_image(drop):
 
-	psi = np.load(drop)
-	psi_sq = psi['real']**2 + psi['imag']**2
+	psi = [np.load(f"{drop}_real"), np.load(f"{drop}_imag")]
+	psi_sq = psi[0]**2 + psi[1]**2
 	psi_k = np.fft.fftshift(np.fft.fftn(psi['real'] + 1j*psi['imag']))
 	psi_k_sq = np.abs(psi_k)**2
 
@@ -34,10 +34,10 @@ def write_image(drop):
 
 	# this somehwat centers seed=0, N=512, f64
 	# plt.imshow(np.log10(np.sqrt(np.roll(np.roll(psi_sq.mean(0), -328, 1), -100,0))))
-	plt.imshow(psi_sq.mean(0))
+	plt.imshow(psi_sq[:,:,0])#.mean(0))
 
 	plt.subplot(122)
-	plt.imshow(psi_k_sq.mean(0))
+	plt.imshow(psi_k_sq[:,:,0])#.mean(0))
 	plt.xlabel("kx (grid cell)")
 	plt.ylabel("ky (grid cell)")
 	plt.title("Projected Momentum Density")
@@ -48,16 +48,16 @@ def write_image(drop):
 
 	return buf
 
-# start = time()
+start = time()
 
-# with imageio.get_writer('bose-star.mp4', fps=fps) as writer:
+with imageio.get_writer('kinetic-test.mp4', fps=fps) as writer:
 
-# 	images = pqdm(drops, write_image, n_jobs=25)
+	images = pqdm(drops, write_image, n_jobs=25)
 
-# 	for image in images:
-# 		writer.append_data(imageio.imread(image))
+	for image in images:
+		writer.append_data(imageio.imread(image))
 
-# print(f"Finished visualization in {time()-start} seconds.")
+print(f"Finished visualization in {time()-start} seconds.")
 
 def radial_profile(drop):
     	
@@ -92,10 +92,10 @@ def radial_profile(drop):
 
 	# this somehwat centers seed=0, N=512, f64
 	# plt.imshow(np.log10(np.sqrt(np.roll(np.roll(psi_sq.mean(0), -328, 1), -100,0))))
-	plt.imshow(rho.mean(0))
+	plt.imshow(rho)#.mean(0))
 
 	plt.subplot(132)
-	plt.imshow(psi_k_sq.mean(0))
+	plt.imshow(psi_k_sq)#.mean(0))
 	plt.xlabel("kx (grid cell)")
 	plt.ylabel("ky (grid cell)")
 	plt.title("Projected Momentum Density")
@@ -115,20 +115,20 @@ def radial_profile(drop):
     	
 start = time()
 
-with imageio.get_writer('profile.mp4', fps=fps) as writer:
+# with imageio.get_writer('profile.mp4', fps=fps) as writer:
 
-	images = pqdm(drops, radial_profile, n_jobs=25)
-	# images = []
-	# for drop in drops:
-	# 		images.append(radial_profile(drop))
+# 	images = pqdm(drops, radial_profile, n_jobs=25)
+# 	# images = []
+# 	# for drop in drops:
+# 	# 		images.append(radial_profile(drop))
 
-	for image in images:
-		writer.append_data(imageio.imread(image))
+# 	for image in images:
+# 		writer.append_data(imageio.imread(image))
 
-print(f"Finished visualization in {time()-start} seconds.")
+# print(f"Finished visualization in {time()-start} seconds.")
 
 
-def end_and_final_radial_profile():
+def initial_and_final_radial_profile():
     	
 	drop0 = drops[0]
 	psi = np.load(drop0)
@@ -137,7 +137,7 @@ def end_and_final_radial_profile():
 
 	rho = psi['real']**2 + psi['imag']**2
 
-	R = np.arange(1, rho.shape[0]//2)
+	R = np.linspace(1, rho.shape[0]//2, 16)
 
 	grid = np.arange(rho.shape[0])
 	xx, yy, zz = np.meshgrid(grid, grid, grid)
@@ -158,7 +158,7 @@ def end_and_final_radial_profile():
 
 	rho = psi['real']**2 + psi['imag']**2
 
-	R = np.arange(1, rho.shape[0]//2)
+	R = np.linspace(1, rho.shape[0]//2, 16)
 
 	grid = np.arange(rho.shape[0])
 	xx, yy, zz = np.meshgrid(grid, grid, grid)
@@ -175,6 +175,7 @@ def end_and_final_radial_profile():
 	plt.ylabel("mass enclosed within pixels")
 	plt.title("Enclosed mass")
 	plt.legend()
+	plt.ylim(1e4, 1e12)
 
 	plt.savefig("profile.png", dpi=200)
-end_and_final_radial_profile()
+# initial_and_final_radial_profile()

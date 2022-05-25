@@ -10,7 +10,7 @@ def script(base_name: str, dump: int):
 #SBATCH --output output/dump{dump:05d}.out
 #SBATCH -c 4
 #SBATCH -p kipac,normal,hns
-#SBATCH -t 4:00:00
+#SBATCH -t 12:00:00
 
 cd /oak/stanford/orgs/kipac/users/pizza/MSM/msm-data-interpreter/
 cargo run --example analyze_bose_star "{base_name}" {dump} --release"""
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     	
 	# Generate scripts
 	base_name = "../rust/sim_data/bose-star-512"
-	ndumps = 0
+	ndumps = 200
 	gen_scripts(base_name, ndumps)
 
 	# Run scripts
