@@ -12,6 +12,7 @@ approx = "0.5.1"
 clap = { version = "3.1.6", features = ["derive"] }
 arrayfire = "3.7.4"
 num = "0.2.1"
+num-derive = "0.2.1"
 npy = "0.4"
 npy-derive = "0.4"
 ndarray = "0.15.4"
@@ -22,6 +23,10 @@ anyhow = "1.0"
 rand = { version = "0.8.5", features = ["small_rng"]}
 rand_distr = "0.4.3"
 num-traits = "0.2.14"
+toml = "0.5.9"
+serde = "1.0.98"
+serde_derive = "1.0.98"
+futures = "0.3.21"
 
 [features]
 c64 = []
