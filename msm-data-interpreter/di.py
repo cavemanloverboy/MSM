@@ -133,9 +133,9 @@ def torch_analyze_sims(
         data_loader = DataLoader(dataset, batch_size=1, num_workers=4, shuffle=False)
 
         # Iterate over each psi in the dataset
-        for psi_ in data_loader:
+        for (stream, psi_) in enumerate(data_loader):
 
-            it.set_description(f"{sim_name}-stream{dump:05d}")
+            it.set_description(f"{sim_name}-stream{stream:05d}")
             sys.stdout.flush()
 
             # Send to device and get rid of batch_size=1 dimension
