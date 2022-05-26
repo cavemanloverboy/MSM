@@ -104,7 +104,7 @@ class DumpDataset(Dataset):
 def torch_analyze_sims(
     sim_name: str,
     sim_data_dir: str,
-    ndumps: int,
+    ndumps: np.array,
     K: int,
     S: int
 ):
@@ -122,11 +122,17 @@ def torch_analyze_sims(
 
 
     # Iterate through each dump
-    it = trange(ndumps)
+    it = tqdm(ndumps)
     for dump in it:
 
         # Define dataset containing same dump from every dataset
         real_dump_names = np.sort(glob(f"{sim_data_dir}/{sim_name}-stream*/psi_{dump:05d}_real"))
+
+        # Create combined directory if it does not yet exist
+        combined_path = f"{sim_data_dir}/{sim_name}-combined"
+        os.makedirs(combined_path, exist_ok=True)
+        if os.path.exists(f"{combined_path}/psi_{dump:05d}"):
+            continue
 
         # Create dataloader
         dataset = DumpDataset(real_dump_names)
@@ -154,10 +160,6 @@ def torch_analyze_sims(
         psik /= dataset.__len__()
         psik2 /= dataset.__len__()
 
-        # Create combined directory if it does not yet exist
-        combined_path = f"{sim_data_dir}/{sim_name}-combined"
-        os.makedirs(combined_path, exist_ok=True)
-
         # Save all 4 arrays to disk
         torch.save(  psi, f"{combined_path}/psi_{dump:05d}")
         torch.save( psi2, f"{combined_path}/psi2_{dump:05d}")
@@ -171,7 +173,7 @@ if __name__ == "__main__":
 
     sim_name = "gaussian-overdensity-512"
     sim_data_dir = "../rust/sim_data"
-    ndumps = 100
+    dumps = np.arange(19,100+1)
     K = 3
     S = 512
 
@@ -180,6 +182,6 @@ if __name__ == "__main__":
 
     # pqdm_analyze_sims(sim_base_name, ndumps, K, S)
 
-    torch_analyze_sims(sim_name, sim_data_dir, ndumps, K, S)
+    torch_analyze_sims(sim_name, sim_data_dir, dumps, K, S)
 
 
