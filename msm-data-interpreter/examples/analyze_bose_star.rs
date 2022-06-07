@@ -1,5 +1,8 @@
 use msm_data_interpreter::analyze_sims;
 use glob::glob;
+use msm_data_interpreter::Functions;
+use ndrustfft::Complex;
+use ndarray::Array4;
 // use clap::Parser;
 
 // /// Simple program to greet a person
@@ -18,6 +21,11 @@ use std::env;
 
 fn main() {
 
+    type T = f64;
+    const K: usize = 3;
+    const S: usize = 512;
+    
+
     let args: Vec<String> = env::args().collect();
     let sim_base_name: String = args[1].clone();
     let dump: usize = args[2].parse().unwrap();
@@ -27,13 +35,22 @@ fn main() {
     // let sim_base_name = "../rust/sim_data/bose-star-512".to_string();
     // let ndumps = 200;
 
+    let array_functions = vec![
+      ("psi", Box::new(|psi: &Array4<Complex<T>>| psi.clone()))
+    ];
+    let scalar_functions = vec![
+      ("const", Box::new(|psi: &Array4<Complex<T>>| Complex::new(5.0 as T, 5.0)))
+    ];
+    let functions = Functions::<T, K, S>::new(
+      array_functions,
+      scalar_functions,
+    );
+
     for sim in glob(format!("{}-stream*", sim_base_name).as_str()).unwrap() {
         println!("{}", sim.unwrap().display());
     }
 
-    type T = f64;
-    const K: usize = 3;
-    const S: usize = 512;
 
-    analyze_sims::<T, K, S>(sim_base_name, dump);
+
+    analyze_sims::<T, K, S>(functions, sim_base_name, &(0..=100_u16).collect::<Vec<u16>>());
 }
