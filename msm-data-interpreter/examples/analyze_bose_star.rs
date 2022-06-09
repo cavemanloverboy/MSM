@@ -33,25 +33,23 @@ fn main() {
       })),
       ("psik", Box::new(|ψ: &Array4<Complex<f64>>| {
           let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
-          let mut ψ_buffer = ψ.clone();
+          let mut ψ_buffer;
           let mut ψk = ψ.clone();
           for dim in 0..K {
-              if dim > 0 { ψk = ψ_buffer.clone(); }
-              ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
-              if dim < K-1 { ψ_buffer = ψk.clone() };
+            ψ_buffer = ψk.clone();
+            ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
           }
-          ψ_k
+          ψk
         })),
       ("psik2", Box::new(|ψ: &Array4<Complex<f64>>| {
           let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
-          let mut ψ_buffer = ψ.clone();
+          let mut ψ_buffer;
           let mut ψk = ψ.clone();
           for dim in 0..K {
-              if dim > 0 { ψk = ψ_buffer.clone(); }
+              ψ_buffer = ψk.clone();
               ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
-              if dim < K-1 { ψ_buffer = ψk.clone() };
           }
-          ψ_k.map(|x| x*x.conj())
+          ψk.map(|x| x*x.conj())
         }))
     ];
 
