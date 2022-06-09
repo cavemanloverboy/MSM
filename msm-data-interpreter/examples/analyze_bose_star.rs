@@ -37,10 +37,10 @@ fn main() {
           let mut ψk = ψ.clone();
           for dim in 0..K {
               if dim > 0 { ψk = ψ_buffer.clone(); }
-              ndfft(&ψ, &mut ψk, &mut fft_handler, dim);
+              ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
               if dim < K-1 { ψ_buffer = ψk.clone() };
           }
-          ψ_buffer
+          ψ_k
         })),
       ("psik2", Box::new(|ψ: &Array4<Complex<f64>>| {
           let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
@@ -48,10 +48,10 @@ fn main() {
           let mut ψk = ψ.clone();
           for dim in 0..K {
               if dim > 0 { ψk = ψ_buffer.clone(); }
-              ndfft(&ψ, &mut ψk, &mut fft_handler, dim);
+              ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
               if dim < K-1 { ψ_buffer = ψk.clone() };
           }
-          ψ_buffer.map(|x| x*x.conj())
+          ψ_k.map(|x| x*x.conj())
         }))
     ];
 
