@@ -113,6 +113,14 @@ where
 
                                 // Load psi for this (dump, sim)
                                 let ψ = load_complex::<T>(format!("{}/psi_{:05}", sim.display(), dump));
+                                // Calculate fft
+                                let mut fft_handler: ndrustfft::FftHandler<T> = ndrustfft::FftHandler::new(S);
+                                let mut ψ_buffer;
+                                let mut ψk = ψ.clone();
+                                for dim in 0..K {
+                                    ψ_buffer = ψk.clone();
+                                    ndrustfft::ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
+                                }
 
                                 // First calculate all fields
                                 for key_value in local_functions.array_functions.functions.iter() {
@@ -121,7 +129,7 @@ where
                                     let (field_name, function) = key_value.pair();
 
                                     // AddAssign function output to entry
-                                    let add_value = function(&ψ);
+                                    let add_value = function(&ψ, &ψk);
                                     let mut entry = local_functions
                                         .array_functions
                                         .values
@@ -139,7 +147,7 @@ where
                                     let (field_name, function) = key_value.pair();
 
                                     // AddAssign function output to entry
-                                    let add_value = function(&ψ);
+                                    let add_value = function(&ψ, &ψk);
                                     let mut entry = local_functions
                                         .scalar_functions
                                         .values
@@ -444,7 +452,7 @@ where
     Complex<T>: ScalarOperand + MulAssign<Complex<T>> + MulAssign<T>,
     FieldName: AsRef<str> + Clone + Eq + Hashable + Display + Send + Sync + 'static + Ord,
 {
-    functions: Arc<DashMap<FieldName, Box<dyn Fn(&Array4<Complex<T>>) -> Array4<Complex<T>> + 'static + Send + Sync>>> ,
+    functions: Arc<DashMap<FieldName, Box<dyn Fn(&Array4<Complex<T>>, &Array4<Complex<T>>) -> Array4<Complex<T>> + 'static + Send + Sync>>> ,
     values: Arc<DashMap<FieldName, Array4<Complex<T>>>>,
 }
 
@@ -454,7 +462,7 @@ where
     Complex<T>: ScalarOperand + MulAssign<Complex<T>> + MulAssign<T>,
     ScalarName: AsRef<str> + Clone + Eq + Hashable + Display + Send + Sync + 'static + Ord,
 {
-    functions: Arc<DashMap<ScalarName, Box<dyn Fn(&Array4<Complex<T>>) -> Complex<T> + 'static + Send + Sync>>>,
+    functions: Arc<DashMap<ScalarName, Box<dyn Fn(&Array4<Complex<T>>, &Array4<Complex<T>>) -> Complex<T> + 'static + Send + Sync>>>,
     values: Arc<DashMap<ScalarName, Complex<T>>>,
 }
 
@@ -499,8 +507,8 @@ where
 {
 
     pub fn new(
-        array_functions: Vec<(Name, Box<dyn Fn(&Array4<Complex<T>>) -> Array4<Complex<T>> +'static + Send + Sync>)>,
-        scalar_functions: Vec<(Name, Box<dyn Fn(&Array4<Complex<T>>) -> Complex<T> + 'static + Send + Sync>)>
+        array_functions: Vec<(Name, Box<dyn Fn(&Array4<Complex<T>>, &Array4<Complex<T>>) -> Array4<Complex<T>> +'static + Send + Sync>)>,
+        scalar_functions: Vec<(Name, Box<dyn Fn(&Array4<Complex<T>>, &Array4<Complex<T>>) -> Complex<T> + 'static + Send + Sync>)>
     ) -> Self {
 
         // Get shape
