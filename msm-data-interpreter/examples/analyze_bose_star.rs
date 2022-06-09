@@ -25,36 +25,21 @@ fn main() {
     }
 
     // Define Array4 -> Array4 functions that are applied to every stream and are reduced to a global state
-    let array_functions: Vec<(&str, Box<(dyn for<'r> Fn(&'r ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>> + Send + Sync + 'static)>)> = vec![
-      ("psi", Box::new(|ψ: &Array4<Complex<f64>>| ψ.clone())),
-      ("psi2", Box::new(|ψ: &Array4<Complex<f64>>| {
-        let ψ_buf = ψ.clone(); 
-        ψ_buf.map(|x| x*x.conj())
+    let array_functions: Vec<(&str, Box<(dyn Fn(&Array4<Complex<f64>>, &Array4<Complex<f64>>) -> ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>> + Send + Sync + 'static)>)> = vec![
+      ("psi", Box::new(|ψ: &Array4<Complex<f64>>, ψk: &Array4<Complex<f64>>| ψ.clone())),
+      ("psi2", Box::new(|ψ: &Array4<Complex<f64>>, ψk: &Array4<Complex<f64>>| {
+        ψ.map(|x| x*x.conj())
       })),
-      ("psik", Box::new(|ψ: &Array4<Complex<f64>>| {
-          let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
-          let mut ψ_buffer;
-          let mut ψk = ψ.clone();
-          for dim in 0..K {
-            ψ_buffer = ψk.clone();
-            ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
-          }
-          ψk
+      ("psik", Box::new(|ψ: &Array4<Complex<f64>>, ψk: &Array4<Complex<f64>>| {
+          ψk.clone()
         })),
-      ("psik2", Box::new(|ψ: &Array4<Complex<f64>>| {
-          let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
-          let mut ψ_buffer;
-          let mut ψk = ψ.clone();
-          for dim in 0..K {
-              ψ_buffer = ψk.clone();
-              ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
-          }
+      ("psik2", Box::new(|ψ: &Array4<Complex<f64>>, ψk: &Array4<Complex<f64>>| {
           ψk.map(|x| x*x.conj())
         }))
     ];
 
     // Define Array4 --> Complex functions that are applied to every stream and are reduce to a global state
-    let scalar_functions:  Vec<(&str, Box<(dyn for<'r> Fn(&'r ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> Complex<f64> + Send + Sync + 'static)>)> = vec![
+    let scalar_functions:  Vec<(&str, Box<(dyn Fn(&Array4<Complex<f64>>, &Array4<Complex<f64>>) -> Complex<f64> + Send + Sync + 'static)>)> = vec![
       // ("Qk".to_string(), Box::new(|psi: &Array4<Complex<f64>>| {
       //   let mut fft_handler: ndrustfft::FftHandler<f64> = ndrustfft::FftHandler::new(S);
       //   let mut psi_buffer = psi.clone();
@@ -74,9 +59,9 @@ fn main() {
     // Initialize mpi
     let (universe, threading) = mpi::initialize_with_threading(mpi::Threading::Funneled).expect("Failed to initialize mpi");
     let world = universe.world();
-    let mut balancer = Balancer::<()>::new_from_world(world, 4);
+    let mut balancer = Balancer::<()>::new_from_world(world, 2);
 
-    //analyze_sims::<f64, K, S>(functions, sim_base_name, &dumps, &mut balancer);
+    analyze_sims::<f64, K, S>(functions, sim_base_name, &dumps, &mut balancer);
 
     let post_array_functions: Vec<(&str, Box<(dyn Fn(&ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> Array4<Complex<f64>> + Send + Sync + 'static)>)> = vec![];
     let post_scalar_functions: Vec<(&str, Box<(dyn Fn(u16, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> (u16, Complex<f64>) + Send + Sync + 'static)>)> = vec![
