@@ -29,12 +29,12 @@ fn test_arrayfire_1_d_inplace_c32_integration() {
     // Initialize array
     let mut array : Array<Complex<T>> = Array::new(&values, dims);
     let dx = length/S as T; // This is manually calculated to make array norm = 1
-    arrayfire::af_print!("array", &array);
+    //arrayfire::af_print!("array", &array);
     debug_assert!(check_norm::<T>(&array, dx, num::FromPrimitive::from_usize(K).unwrap()));
 
     // Perform inplace FFT + inverse, ensuring normalization in kspace
     forward_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("forward fft failed");
-    arrayfire::af_print!("array", &array);
+    //arrayfire::af_print!("array", &array);
     let dk = dx;//1.0/length*(S as T).sqrt();
     debug_assert!(check_norm::<T>(&array, dk, num::FromPrimitive::from_usize(K).unwrap())); 
     inverse_inplace::<T>(&mut array, num::FromPrimitive::from_usize(K).unwrap(), S).expect("inverse fft failed");

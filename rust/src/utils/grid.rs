@@ -245,7 +245,7 @@ fn test_normalize_arrayfire_array_1d_f64() {
 
 
     normalize::<T>(&mut array, dx, D);
-    arrayfire::af_print!("normalized array", array);
+    //arrayfire::af_print!("normalized array", array);
 
 
     let norm_check = sum_all(
@@ -283,7 +283,7 @@ fn test_normalize_arrayfire_array_2d_f64() {
 
 
     normalize::<T>(&mut array, dx, D);
-    arrayfire::af_print!("normalized array", array);
+    //arrayfire::af_print!("normalized array", array);
 
 
     let norm_check = sum_all(
@@ -322,7 +322,7 @@ fn test_normalize_arrayfire_array_3d_f64() {
 
 
     normalize::<T>(&mut array, dx, D);
-    arrayfire::af_print!("normalized array", array);
+    //arrayfire::af_print!("normalized array", array);
 
 
     let norm_check = sum_all(
