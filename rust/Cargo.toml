@@ -12,7 +12,6 @@ expanding = ["cosmology"]
 conv = "0.3.3"
 approx = "0.5.1"
 clap = { version = "3.1.6", features = ["derive"] }
-arrayfire = "3.7.4"
 num = "0.2.1"
 num-derive = "0.2.1"
 npy = "0.4"
@@ -31,3 +30,10 @@ serde_derive = "1.0.98"
 futures = "0.3.21"
 cosmology = { version = "0.1.1", optional = true }
 
+[target.'cfg(linux)'.dependencies]
+arrayfire = "=3.8.0"
+
+[build-dependencies]
+futures = "0.3.21"
+tokio = { version = "1.20.1", features = ["rt", "macros"] }
+reqwest = "0.11.11"
