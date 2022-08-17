@@ -138,7 +138,7 @@ where
 
 impl<T> SimulationParameters<T>
 where
-    T: FromPrimitive + Float + FloatingPoint + Display + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64
+    T: FromPrimitive + Float + FloatingPoint + Display + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + Fromf64 + ConstGenerator<OutType = T>
 {
 
     pub fn new(
@@ -314,9 +314,10 @@ where
         path: String,
     ) -> Self {
 
+        // Read in simulations parameters from user's toml
         let toml: TomlParameters = read_toml(path);
 
-        // Required Parameters
+        // Extract required parameters from toml
         let axis_length: T = T::from_f64(toml.axis_length).unwrap();
         let time: T = T::from_f64(toml.time.unwrap_or(0.0)).unwrap();
         let final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
@@ -329,22 +330,47 @@ where
         let dims = num::FromPrimitive::from_usize(toml.dims).unwrap();
         let size = toml.size;
 
-        // Overdetermined
+        // Calculate overdetermined parameters
         let particle_mass;
         let hbar_;
-        if toml.ntot.is_some() {
-            particle_mass = toml.total_mass / toml.ntot.unwrap();
-            hbar_ = toml.hbar_.expect("hbar_ must be specified if ntot is specified");
+        if let Some(ntot) = toml.ntot {
+            
+            // User has specified the total mass and ntot. 
+            // So, the particle mass can be derived.
+
+            particle_mass = toml.total_mass / ntot;
+            hbar_ = toml.hbar_
+                .unwrap_or_else(|| {
+                    println!("hbar_ not specified, using HBAR / particle_mass.");
+                    HBAR / particle_mass
+                });
+
+        } else if let Some(p_mass) = toml.particle_mass {
+
+                // User has specified the total mass and particle mass. 
+                // So, the ntot can be derived, as can hbar_ if not specified.
+
+                particle_mass = p_mass;
+                hbar_ = toml.hbar_
+                    .unwrap_or_else(|| {
+                        println!("hbar_ not specified, using HBAR / particle_mass.");
+                        HBAR / particle_mass
+                    });
+        } else if let Some(hbar_tilde) = toml.hbar_ {
+
+                // User has specified the total mass and hbar_. 
+                // So, the ntot and particle_mass can be derived.
+
+                hbar_ = hbar_tilde;
+                particle_mass = HBAR / hbar_
+                // ntot isn't actually stored but is determined via total_mass / particle_mass;
         } else {
-            if toml.particle_mass.is_some() {
-                assert!(toml.hbar_.is_none(), "Cannot specify hbar_ and particle_mass");
-                particle_mass = toml.particle_mass.unwrap();
-                hbar_ = HBAR / particle_mass;
-            } else {
-                assert!(toml.hbar_.is_some(), "Must specify hbar_ or particle_mass");
-                hbar_ = toml.hbar_.unwrap();
-                particle_mass = HBAR / hbar_ ;
-            }
+            panic!(
+                "You must specify the total mass and either exactly one of ntot (total number \
+                 of particles) or particle_mass, or hbar_tilde ( hbar / particle_mass ). Note: you
+                 can specify hbar_tilde in addition to one of the first two if you'd like to change
+                 the value of planck's constant itself."
+                )
         }
 
         // Construct `SimulationParameters`
