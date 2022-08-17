@@ -119,7 +119,7 @@ def torch_analyze_sims(
     for dump in it:
 
         # Create combined directory if it does not yet exist
-        combined_path = f"{sim_data_dir}/{sim_name}-combined"
+        combined_path = f"{sim_data_dir}/{sim_name}-combined2"
         os.makedirs(combined_path, exist_ok=True)
         if os.path.exists(f"{combined_path}/psi_{dump:05d}"):
             continue
@@ -131,14 +131,16 @@ def torch_analyze_sims(
         psik2 = torch.zeros(tuple(s for s in size)).to(device)
 
         # Define dataset containing same dump from every dataset
-        real_dump_names = np.sort(glob(f"{sim_data_dir}/{sim_name}-stream*/psi_{dump:05d}_real"))
+        real_dump_names = np.sort(glob(f"{sim_data_dir}/{sim_name}-stream*/psi_{dump:05d}_real"))[64:]
+        print(real_dump_names)
+
 
         # Create dataloader
         dataset = DumpDataset(real_dump_names)
-        data_loader = DataLoader(dataset, batch_size=1, num_workers=4, shuffle=False)
+        data_loader = DataLoader(dataset, batch_size=1, num_workers=8, shuffle=False)
 
         # Iterate over each psi in the dataset
-        for (stream, psi_) in enumerate(data_loader, 1):
+        for (stream, psi_) in enumerate(data_loader, 65):
 
             it.set_description(f"working on stream {stream}/{data_loader.__len__()}")
             # sys.stdout.flush()
