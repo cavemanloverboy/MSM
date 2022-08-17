@@ -14,7 +14,6 @@ fn main() {
     const K: usize = 3;
     const S: usize = 512;
     
-
     // Define work scope and sim parameters
     let args: Vec<String> = env::args().collect();
     let sim_base_name: String = args[1].clone();
@@ -61,7 +60,7 @@ fn main() {
     let world = universe.world();
     let mut balancer = Balancer::<()>::new_from_world(world, 2);
 
-    analyze_sims::<f64, K, S>(functions, sim_base_name, &dumps, &mut balancer);
+    analyze_sims::<f64, _, K, S>(functions, &sim_base_name, &dumps, &mut balancer);
 
     let post_array_functions: Vec<(&str, Box<(dyn Fn(&ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> Array4<Complex<f64>> + Send + Sync + 'static)>)> = vec![];
     let post_scalar_functions: Vec<(&str, Box<(dyn Fn(u16, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>, &ArrayBase<OwnedRepr<Complex<f64>>, Dim<[usize; 4]>>) -> (u16, Complex<f64>) + Send + Sync + 'static)>)> = vec![

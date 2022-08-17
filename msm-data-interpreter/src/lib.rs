@@ -28,7 +28,7 @@ pub fn load_complex<T>(
     file: String
 ) -> Array4<Complex<T>>
 where
-    T: Num + Float + Default + Equivalence + ToPrimitive + ReadableElement + Copy + Send + 'static,
+    T: Num + Float + Default + Equivalence + ToPrimitive + ReadableElement + Copy + Send + 'static + std::fmt::Debug,
 {
     // Read in real/imag fields
     let real_file = format!("{file}_real");
@@ -36,10 +36,10 @@ where
 
     // Send one I/O operation to another thread, do one with this thread
     let real: JoinHandle<Array4<Complex<T>>> = spawn(move || {
-        let real_array: Array4<T> = read_npy(real_file).unwrap(); 
+        let real_array: Array4<T> = read_npy(&real_file).map_err(|_| Err::<Array4<T>, String>(format!("couldn't open {real_file}"))).unwrap(); 
         real_array.map(|&x: &T| Complex::<T>::new(x, T::zero()))
     });
-    let imag: Array4<T> = read_npy(imag_file).unwrap();
+    let imag: Array4<T> = read_npy(&imag_file).map_err(|_| Err::<Array4<T>, String>(format!("couldn't open {imag_file}"))).unwrap();
     let imag = imag.map(|&x| Complex::<T>::new(T::zero(), x));
 
     real.join().unwrap() + imag
@@ -71,7 +71,7 @@ where
 /// Analyze the simulations with base name `sim_base_name`.
 pub fn analyze_sims<T, Name, const K: usize, const S: usize>(
     functions: Arc<Functions<T, Name, K, S>>,
-    sim_base_name: String,
+    sim_base_name: &String,
     dumps: &Vec<u16>,
     balancer: &mut Balancer<()>,
 ) -> Result<()>
@@ -92,8 +92,10 @@ where
             // The number of sims with this dump
             let nsims: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
 
-            for sim in glob(format!("{}-stream*", sim_base_name).as_str()).unwrap() {
+            // for sim in glob(format!("{}-stream[00-63]", sim_base_name).as_str()).unwrap() {
+            for sim in 1+64*2..=64*3 {
 
+                let sim: Result<String> = Ok(format!("{}-stream{sim:05}", sim_base_name));
                 // Clone the Arc containing the functions to be evaluated
                 let local_functions: Arc<Functions<T, Name, K, S>> = functions.clone();
 
@@ -109,10 +111,10 @@ where
                                 // Start timer for this (dump, sim)
                                 let now = Instant::now();
 
-                                println!("Starting sim {}", sim.display());
+                                println!("Starting sim {}", &sim);
 
                                 // Load psi for this (dump, sim)
-                                let ψ = load_complex::<T>(format!("{}/psi_{:05}", sim.display(), dump));
+                                let ψ = load_complex::<T>(format!("{}/psi_{:05}", &sim, dump));
                                 // Calculate fft
                                 let mut fft_handler: ndrustfft::FftHandler<T> = ndrustfft::FftHandler::new(S);
                                 let mut ψ_buffer;
@@ -161,7 +163,7 @@ where
                                 // Increment sims counter for this dump
                                 local_counter.fetch_add(1, Ordering::SeqCst);
 
-                                println!("Finished sim {} in {} seconds", sim.display(), now.elapsed().as_secs());
+                                println!("Finished sim {} in {} seconds", &sim, now.elapsed().as_secs());
                             });
                     },
                     Err(e) => { panic!("invalid sim file or path: {e:?} ") }
@@ -174,7 +176,7 @@ where
             // Average and dump
             let nsims_usize: usize = nsims.load(Ordering::SeqCst);
             println!("AtomicUsize counted {nsims_usize} sims");
-            let path_base = format!("{}-combined/PLACEHOLDER_{:05}", sim_base_name, dump);
+            let path_base = format!("{}-combined2/PLACEHOLDER_{:05}", sim_base_name, dump);
             {
                 // First average and dump all fields (and then zero out)
                 for key_value in functions.array_functions.functions.iter() {
