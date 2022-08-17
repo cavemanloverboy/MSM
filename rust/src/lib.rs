@@ -1,3 +1,5 @@
+#![feature(drain_filter)]
+
 pub mod constants;
 pub mod simulation_object;
 pub mod utils;

@@ -16,12 +16,14 @@ use crate::{
 use ndarray_npy::{ReadableElement, WritableElement};
 use anyhow::{Result, Context, bail};
 use std::fmt::Display;
+use std::thread::JoinHandle;
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use std::time::Instant;
 use serde_derive::Deserialize;
 use num_traits::FloatConst;
-use futures::executor::block_on;
 
+// Maximum number of concurrent writes to disk ()
+const MAX_CONCURRENT_GRID_WRITES: usize = 10;
 
 #[derive(Deserialize)]
 struct TomlParameters {
@@ -142,7 +144,7 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
 /// It also holds the `SimulationParameters` which holds the simulation parameters.
 pub struct SimulationObject<T>
 where
-    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive + std::fmt::LowerExp + FloatConst,
+    T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive + std::fmt::LowerExp + FloatConst + Send + Sync + 'static,
     Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<AbsOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
 {
 
@@ -152,12 +154,15 @@ where
     /// This has the simulation parameters
     pub parameters: SimulationParameters<T>,
 
+    /// Active io
+    pub active_io: Vec<JoinHandle<Instant>>,
+
 }
 
 impl<T> SimulationGrid<T>
 where
     T: Float + FloatingPoint + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<BaseType = T> + FromPrimitive,
-    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>> ,
+    Complex<T>: HasAfEnum + ComplexFloating + FloatingPoint + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
  {
 
     pub fn new(
@@ -278,7 +283,7 @@ where
 
 impl<T> SimulationObject<T>
 where
-    T: Float + FloatingPoint + Display + ToPrimitive + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + std::fmt::LowerExp + FloatConst,
+    T: Float + FloatingPoint + Display + ToPrimitive + FromPrimitive + ConstGenerator<OutType=T> + HasAfEnum<InType = T> + HasAfEnum<AbsOutType = T> + HasAfEnum<AggregateOutType = T> + HasAfEnum<BaseType = T> + Fromf64 + WritableElement + ReadableElement + std::fmt::LowerExp + FloatConst + Send + Sync + 'static,
     Complex<T>: HasAfEnum + FloatingPoint + ComplexFloating + HasAfEnum<AggregateOutType = Complex<T>> + HasAfEnum<BaseType = T> + HasAfEnum<ComplexOutType = Complex<T>> + HasAfEnum<UnaryOutType = Complex<T>> + HasAfEnum<AbsOutType = T> + HasAfEnum<ArgOutType = T> + ConstGenerator<OutType=Complex<T>>,
     rand_distr::Standard: rand_distr::Distribution<T>
 {
@@ -321,6 +326,7 @@ where
         let sim_obj = SimulationObject {
             grid,
             parameters,
+            active_io: vec![],
         };
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψ, sim_obj.parameters.dx, dims));
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψk, sim_obj.parameters.dk, dims));
@@ -339,6 +345,7 @@ where
         let sim_obj = SimulationObject {
             grid,
             parameters,
+            active_io: vec![],
         };
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψ, sim_obj.parameters.dx, sim_obj.parameters.dims));
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψk, sim_obj.parameters.dk, sim_obj.parameters.dims));
@@ -432,6 +439,7 @@ where
         let sim_obj = SimulationObject {
             grid,
             parameters,
+            active_io: vec![], 
         };
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψ, sim_obj.parameters.dx, dims));
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψk, sim_obj.parameters.dk, dims));
@@ -554,6 +562,23 @@ where
         // Increment wall time counter, step counter
         self.parameters.sim_wall_time += now.elapsed().as_millis();
         self.parameters.n_steps += 1;
+
+        // If finished, wait for I/O to finish
+        if !self.not_finished() {
+            while self.active_io.len() > 0 {
+
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                // Steal all done threads from active_io
+                let done_threads = self.active_io
+                    .drain_filter(|io| io.is_finished());
+
+                for io in done_threads {
+                    println!("I/O took {} millis", io.join().unwrap().elapsed().as_millis());
+                }
+                
+            }
+        }
         
         Ok(())
     }
@@ -679,14 +704,34 @@ where
         let shape = self.get_shape_array();
 
         // Create directory if necessary
-        std::fs::create_dir_all(format!("sim_data/{}/", self.parameters.sim_name)).expect("failed to make directory");
+        // let sim_data_folder = "/scratch/groups/tabel/pizza/sim_data";
+        let sim_data_folder = "sim_data";
 
-        // Dump psi
-        block_on(complex_array_to_disk(
-            format!("sim_data/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps).as_str(),
-            &self.grid.ψ,
-            shape
-        )).context(RuntimeError::IOError).unwrap();
+        std::fs::create_dir_all(format!("{sim_data_folder}/{}/", self.parameters.sim_name)).expect("failed to make directory");
+
+        // Check to see which are active
+        println!("{:?}", &self.active_io);
+        while self.active_io.len() >= MAX_CONCURRENT_GRID_WRITES*2 { // factor of 2 is here for real + imag 
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            // Steal all done threads from active_io
+            let done_threads = self.active_io
+                .drain_filter(|io| io.is_finished());
+
+            for io in done_threads {
+                println!("I/O took {} millis", io.join().unwrap().elapsed().as_millis());
+            }
+
+        }
+
+        self.active_io.append(
+            &mut complex_array_to_disk(
+                format!("{sim_data_folder}/{}/psi_{:05}", self.parameters.sim_name, self.parameters.current_dumps),
+                &self.grid.ψ,
+                shape,
+            ).context(RuntimeError::IOError).unwrap()
+        );
     }
 
     /// This function checks if simulation is done
