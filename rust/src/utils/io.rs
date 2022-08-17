@@ -1,55 +1,121 @@
 use arrayfire::{Dim4, Array, HasAfEnum};
 use num::{Float, Complex};
 use ndarray_npy::{WritableElement, write_npy};
-use anyhow::{Result, Context};
+use anyhow::Result;
 use serde::de::DeserializeOwned;
+use std::thread::{spawn, JoinHandle};
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 /// This function writes an arrayfire array to disk in .npy format. It first hosts the
-pub async fn complex_array_to_disk<T>(
-    path: &str,
+pub fn complex_array_to_disk<T>(
+    path: String,
     array: &Array<Complex<T>>,
     shape: [u64; 4],
-) -> Result<()>
+) -> Result<Vec<JoinHandle<Instant>>>
 where
-    T: Float + HasAfEnum + WritableElement,
+    T: Float + HasAfEnum + WritableElement + Send + 'static + Sync,
     Complex<T>: HasAfEnum,
 {
+    let timer = Instant::now();
+
     // Host array
     let mut host = vec![Complex::<T>::new(T::zero(), T::zero()); array.elements()];
     array.host(&mut host);
-    let real: Vec<T> = host
-        .iter()
-        .map(|x| x.re)
-        .collect();
-    let imag: Vec<T> = host
-        .iter()
-        .map(|x| x.im)
-        .collect();
-    
- 
-     // Build nd_array for npy serialization
-     let real: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(real);
-     let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
-     let real = real.into_shape(array_to_tuple(shape)).unwrap();
-     let imag = imag.into_shape(array_to_tuple(shape)).unwrap();
-     //println!("host shape is now {:?}", real.shape());
- 
-     // Write to npz
-    //  let mut npz = NpzWriter::new(File::create(path).unwrap());
-    //  npz.add_array("real", &real).context(RuntimeError::IOError)?;
-    //  npz.add_array("imag", &imag).context(RuntimeError::IOError)?;
-    //  npz.finish().context(RuntimeError::IOError)?;
 
+    // Atomic reference counters
+    let real_host = Arc::new(RwLock::new(host));
+    let imag_host = real_host.clone();
+
+    // Construct path
     let real_path = format!("{}_real", path);
     let imag_path = format!("{}_imag", path);
-    let real = array_to_disk(real_path, &real);
-    let imag = array_to_disk(imag_path, &imag);
-    futures::join!(real, imag).expect("write to disk in parallel failed");
 
-    Ok(())
+    // Spawn a thread for each of the i/o operations
+    let real_handle: std::thread::JoinHandle<_> = spawn(move || {
+
+        // Gather real values
+        let real: Vec<T> = real_host
+            .read()
+            .unwrap()
+            .iter()
+            .map(|x| x.re)
+            .collect();
+
+        // Build nd_array for npy serialization
+        let real: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(real);
+
+        // Reshape 1D into 4D
+        let real = real.into_shape(array_to_tuple(shape)).unwrap();
+
+        array_to_disk(real_path, &real).expect("write to disk in parallel failed");
+
+        timer
+    });
+    let imag_handle: std::thread::JoinHandle<_> = spawn(move || {
+
+        // Gather imag values
+        let imag: Vec<T> = imag_host
+            .read()
+            .unwrap()
+            .iter()
+            .map(|x| x.im)
+            .collect();
+
+        // Build nd_array for npy serialization
+        let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
+
+         // Reshape 1D into 4D
+        let imag = imag.into_shape(array_to_tuple(shape)).unwrap();
+
+        array_to_disk(imag_path, &imag).expect("write to disk in parallel failed");
+
+        timer
+    });
+
+    Ok(vec![real_handle, imag_handle])
+
+
+    // // Serial Async Scope
+    // {
+    //     // Host array
+    //     let mut host = vec![Complex::<T>::new(T::zero(), T::zero()); array.elements()];
+    //     array.host(&mut host);
+    //     let real: Vec<T> = host
+    //         .iter()
+    //         .map(|x| x.re)
+    //         .collect();
+    //     let imag: Vec<T> = host
+    //         .iter()
+    //         .map(|x| x.im)
+    //         .collect();
+        
+        
+    //     // Build nd_array for npy serialization
+    //     let real: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(real);
+    //     let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
+    //     let real = real.into_shape(array_to_tuple(shape)).unwrap();
+    //     let imag = imag.into_shape(array_to_tuple(shape)).unwrap();
+    //     //println!("host shape is now {:?}", real.shape());
+
+    //         // Write to npz
+    //     //  let mut npz = NpzWriter::new(File::create(path).unwrap());
+    //     //  npz.add_array("real", &real).context(RuntimeError::IOError)?;
+    //     //  npz.add_array("imag", &imag).context(RuntimeError::IOError)?;
+    //     //  npz.finish().context(RuntimeError::IOError)?;
+
+    //     let real_path = format!("{}_real", path);
+    //     let imag_path = format!("{}_imag", path);
+    //     let real = array_to_disk(real_path, &real);
+    //     let imag = array_to_disk(imag_path, &imag);
+    //     futures::join!(real, imag);//.expect("write to disk in parallel failed");
+    // }
+
+    // println!("I/O took {} millis", timer.elapsed().as_millis());
+    // Ok(())
 }
 
-async fn array_to_disk<T>(
+fn array_to_disk<T>(
     path: String,
     array: &ndarray::Array4<T>,
 ) -> Result<()>
