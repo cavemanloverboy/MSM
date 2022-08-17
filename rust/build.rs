@@ -1,9 +1,9 @@
 use std::error::Error;
-use std::io::copy;
+// use std::io::copy;
 use std::env;
-use std::fs::File;
-use reqwest;
-use futures::executor::block_on;
+// use std::fs::File;
+// use reqwest;
+// use futures::executor::block_on;
 
 
 /// URL to 3.8.0 linux installer
@@ -17,17 +17,27 @@ const MAC_3_8_0_INSTALLER: &'static str = "https://arrayfire.s3.amazonaws.com/3.
 
 fn main() -> Result<(), Box<dyn Error>> {
 
+    println!(
+        "cargo:rustc-env=AF_PATH={}",
+        env::current_dir().unwrap().join("arrayfire").display()
+    );
+    env::set_var("AF_PATH", env::current_dir().unwrap().join("arrayfire"));
+    println!(
+        "cargo:rustc-env=LD_LIBRARY_PATH={}:{}/lib64",
+        env::var("LD_LIBRARY_PATH").unwrap(), &env::var("AF_PATH").unwrap()
+    );
+    println!("cargo:warning= these are the vars{}, {}", env::var("AF_PATH").unwrap(), env!("LD_LIBRARY_PATH"));
+
+
     // Build arrayfire if necessary
     if std::path::Path::exists("./arrayfire".as_ref()) {
-        // User seems to have built arrayfire
+        // User seems to have arrayfire built
     } else {
         build_arrayfire()?;
     }
 
     // Set env vars
-    #[cfg(any(target_os = "macos", target_os="linux"))]
-    env::set_var("AF_PATH", env::current_dir().unwrap().join("arrayfire"));
-    env::set_var("LD_LIBRARY_PATH", env::var("LD_LIBRARY_PATH").unwrap() + ":$AF_PATH");
+    
 
     Ok(())
 }
@@ -41,14 +51,23 @@ fn build_arrayfire() {
 #[cfg(target_os = "linux")]
 fn build_arrayfire() -> Result<(), Box<dyn Error>> {
     
-    // Download installer
-    download_file(LINUX_3_8_0_INSTALLER)?;
+    // Download installer if necessary
+    if !std::path::Path::exists("af_installer.sh".as_ref()) {
+        download_file(LINUX_3_8_0_INSTALLER)?;
+    }
 
     // Run installer
-    std::process::Command::new("bash ./ArrayFire-v3.8.0_Linux_x86_64.sh")
-            .args(["--include-subdir", "--prefix=./", "--skip-license"])
+    println!("installer");
+    println!("{:?}", 
+        std::process::Command::new("bash")
+            .args(["af_installer.sh", "--include-subdir", "--skip-license"])
             .output()
-            .expect("failed to build arrayfire");
+            .expect("failed to build arrayfire")
+    );
+
+    // delete installer
+    std::fs::remove_file("af_installer.sh").expect("failed to delete installer file");
+
 
     Ok(())
 }
@@ -64,15 +83,20 @@ fn build_arrayfire() {
 #[tokio::main(flavor = "current_thread")]
 async fn download_file(url: &'static str) -> Result<(), Box<dyn Error>> {
 
-    // Get response from url
-    let response = reqwest::get(url).await?;
+    // // Get response from url
+    // let response = reqwest::get(url).await?;
 
-    // File save destination
-    let mut dest = File::create("./af_installer.sh")?;
+    // // File save destination
+    // let mut dest = File::create("./af_installer.sh")?;
 
-    // Copy content to file
-    let content = response.text().await?;
-    copy(&mut content.as_bytes(), &mut dest)?;
+    // // Copy content to file
+    // let content = response.text().await?;
+    // copy(&mut content.as_bytes(), &mut dest)?;
+
+    std::process::Command::new("wget")
+        .args([url, "--output-document=af_installer.sh"])
+        .output()
+        .expect("failed");
 
     Ok(())
 }
