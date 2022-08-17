@@ -2,6 +2,7 @@ use arrayfire::{Dim4, Array, HasAfEnum};
 use num::{Float, Complex};
 use ndarray_npy::{WritableElement, write_npy};
 use anyhow::Result;
+use serde_derive::Deserialize;
 use serde::de::DeserializeOwned;
 use std::thread::{spawn, JoinHandle};
 use std::sync::{Arc, RwLock};
