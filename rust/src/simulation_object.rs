@@ -8,7 +8,7 @@ use crate::{
         grid::{check_complex_for_nans, check_norm, Dimensions, IntoT},
         fft::{forward, inverse, forward_inplace, inverse_inplace, spec_grid},
         complex::complex_constant,
-        io::{complex_array_to_disk, read_toml},
+        io::{complex_array_to_disk, read_toml, TomlParameters},
         error::*,
     },
     ics::{InitialConditions, *},
@@ -18,45 +18,8 @@ use anyhow::{Result, Context, bail};
 use std::fmt::Display;
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use std::time::Instant;
-use serde_derive::Deserialize;
 use num_traits::FloatConst;
 use futures::executor::block_on;
-
-
-#[derive(Deserialize)]
-struct TomlParameters {
-    
-    /// Physical length of box
-    pub axis_length: f64,
-    /// Start (and current) time of simulation
-    pub time: Option<f64>,
-    /// End time of simulation
-    pub final_sim_time: f64,
-    /// Safety factor
-    pub cfl: f64,
-    /// Number of data dumps
-    pub num_data_dumps: u32,
-    /// Total mass in the system
-    pub total_mass: f64,
-    /// Particle mass (use this or hbar_ = HBAR / particle_mass)
-    pub particle_mass: Option<f64>,
-    /// Specify number of particles. If this is used, `particle_mass` is ignored and HBAR const is ignored.
-    pub ntot: Option<f64>,
-    /// HBAR / particle mass (use this or particle_mass)
-    pub hbar_: Option<f64>,
-    /// Name of simulation (used for directories)
-    pub sim_name: String,
-    /// Where to begin checking for cutoff (this is a parameter in [0,1])
-    pub k2_cutoff: f64,
-    /// How much of mass to use as threshold for constitutes aliasing (P(k > k2_cutoff * k2))
-    pub alias_threshold: f64,
-    /// Dimensionality of grid
-    pub dims: usize,
-    /// Number of grid cells per dim
-    pub size: usize,
-    /// Initial Conditions
-    pub ics: InitialConditions,
-}
 
 
 /// This struct holds the grids which store the wavefunction, its Fourier transform, and other grids

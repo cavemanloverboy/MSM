@@ -87,3 +87,48 @@ pub fn read_toml<T: DeserializeOwned>(
     // Return parsed toml from str
     toml::from_str(toml_contents).expect("Could not parse toml file contents")
 }
+
+use crate::ics::InitialConditions;
+#[cfg(feature = "expanding")]
+use crate::expanding::CosmologyParameters;
+
+
+#[derive(Deserialize)]
+pub struct TomlParameters {
+    
+    /// Physical length of box
+    pub axis_length: f64,
+    /// Start (and current) time of simulation
+    pub time: Option<f64>,
+    /// End time of simulation
+    pub final_sim_time: f64,
+    /// Safety factor
+    pub cfl: f64,
+    /// Number of data dumps
+    pub num_data_dumps: u32,
+    /// Total mass in the system
+    pub total_mass: f64,
+    /// Particle mass (use this or hbar_ = HBAR / particle_mass)
+    pub particle_mass: Option<f64>,
+    /// Specify number of particles. If this is used, `particle_mass` is ignored and HBAR const is ignored.
+    pub ntot: Option<f64>,
+    /// HBAR / particle mass (use this or particle_mass)
+    pub hbar_: Option<f64>,
+    /// Name of simulation (used for directories)
+    pub sim_name: String,
+    /// Where to begin checking for cutoff (this is a parameter in [0,1])
+    pub k2_cutoff: f64,
+    /// How much of mass to use as threshold for constitutes aliasing (P(k > k2_cutoff * k2))
+    pub alias_threshold: f64,
+    /// Dimensionality of grid
+    pub dims: usize,
+    /// Number of grid cells per dim
+    pub size: usize,
+    /// Initial Conditions
+    pub ics: InitialConditions,
+    
+    /// Cosmological Parameters
+    #[cfg(feature = "expanding")]
+    pub cosmology: CosmologyParameters,
+
+}
