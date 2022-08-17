@@ -618,7 +618,7 @@ fn test_cold_gauss_initialization() {
 
     // Simulation parameters
     const K: usize = 3;
-    const S: usize = 512;
+    const S: usize = 128;
     let axis_length = 1.0;
     let time = 1.0;
     let total_sim_time = 1.0;
