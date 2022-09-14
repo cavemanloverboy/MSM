@@ -2,6 +2,7 @@ use arrayfire::{
     Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
     mul, real, conjg, exp, max_all, div, replace_scalar, isnan, abs
 };
+use cosmology::scale_factor::CosmologicalParameters;
 use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
@@ -11,7 +12,7 @@ use crate::{
         io::{complex_array_to_disk, read_toml, TomlParameters},
         error::*,
     },
-    ics::{InitialConditions, *},
+    ics::{InitialConditions, *}, expanding::{ScaleFactorSolver, CosmologyParameters},
 };
 use ndarray_npy::{ReadableElement, WritableElement};
 use anyhow::{Result, Context, bail};
@@ -40,6 +41,7 @@ where
 
     /// Potential
     pub φ: Array<Complex<T>>,
+
 }
 
 
@@ -99,7 +101,9 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     pub sim_wall_time: u128,
     /// Number of timesteps taken
     pub n_steps: u64,
-    
+
+    #[cfg(feature = "expanding")]
+    pub cosmo_params: CosmologyParameters,
 }
 
 /// In the original python implementation, this was a `sim` or `SimObject` object.
@@ -120,6 +124,8 @@ where
     /// Active io
     pub active_io: Vec<JoinHandle<Instant>>,
 
+    #[cfg(feature = "expanding")]
+    scale_factor_solver: ScaleFactorSolver,
 }
 
 impl<T> SimulationGrid<T>
@@ -160,6 +166,8 @@ where
         hbar_: Option<f64>,
         dims: Dimensions,
         size: usize,
+        #[cfg(feature = "expanding")]
+        cosmo_params: CosmologyParameters,
     ) -> Self
     {
 
@@ -204,6 +212,8 @@ where
             size,
             dims,
             n_steps,
+            #[cfg(feature = "expanding")]
+            cosmo_params,
         }
     }
 
@@ -266,6 +276,8 @@ where
         hbar_: Option<f64>,
         dims: Dimensions,
         size: usize,
+        #[cfg(feature = "expanding")]
+        cosmo_params: crate::expanding::CosmologyParameters,
     ) -> Self {
         
         // Construct components
@@ -284,12 +296,15 @@ where
             hbar_,
             dims,
             size,
+            cosmo_params,
         );
 
         let sim_obj = SimulationObject {
             grid,
             parameters,
             active_io: vec![],
+            #[cfg(feature = "expanding")]
+            scale_factor_solver: ScaleFactorSolver::new(cosmo_params)
         };
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψ, sim_obj.parameters.dx, dims));
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψk, sim_obj.parameters.dk, dims));
@@ -307,6 +322,8 @@ where
 
         let sim_obj = SimulationObject {
             grid,
+            #[cfg(feature = "expanding")]
+            scale_factor_solver: ScaleFactorSolver::new(parameters.cosmo_params),
             parameters,
             active_io: vec![],
         };
@@ -395,6 +412,8 @@ where
             Some(hbar_),
             dims,
             size,
+            #[cfg(feature = "expanding")]
+            toml.cosmology,
         );
 
         // Construct wavefunction
@@ -423,12 +442,16 @@ where
             _ => todo!("You must have passed an enum for a set of ics that is not yet implemented"),
         };
 
+        #[cfg(feature = "expanding")]
+        let scale_factor_solver = ScaleFactorSolver::new(toml.cosmology);
 
         // Pack grid and parameters into `Simulation Object`
         let sim_obj = SimulationObject {
             grid,
             parameters,
             active_io: vec![], 
+            #[cfg(feature = "expanding")]
+            scale_factor_solver,
         };
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψ, sim_obj.parameters.dx, dims));
         debug_assert!(check_norm::<T>(&sim_obj.grid.ψk, sim_obj.parameters.dk, dims));
@@ -497,7 +520,7 @@ where
         debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
 
 
-        // Update momentum from t + dt/2 to t + dt
+        // Update kinetic from t + dt/2 to t + dt
         // exp(-(dt/2) * (k^2/2) / h) = exp(-dt/4/h * k^2)
         let k_evolution: Array<Complex<T>> = exp(
             &mul(
@@ -506,8 +529,6 @@ where
                 true
             )
         );
-        //complex_array_to_disk("k_evo", "k_evo", &k_evolution, [shape.0, shape.1, shape.2, shape.3]);
-        //assert!(false);
         // Now all fields have kinetic + momentum at t + dt
         self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
         debug_assert!(check_complex_for_nans(&self.grid.ψk));
@@ -659,8 +680,12 @@ where
             &mul(
                 &Array::new(
                     &[Complex::<T>::new(
-                        // TODO: check sign
-                        T::from_f64(-POIS_CONST).unwrap(),
+                        if cfg!(feature = "expanding") {
+                            // In expanding universe, scale POIS_CONST by scale factor squared
+                            T::from_f64(-POIS_CONST * self.get_scale_factor().powi(2)).unwrap() 
+                        } else {
+                            T::from_f64(-POIS_CONST).unwrap()
+                        },
                         T::zero()
                     )],
                     Dim4::new(&[1,1,1,1])
@@ -824,6 +849,16 @@ where
         let size = self.parameters.size;
         inverse(array, dims, size)
     }
+
+    #[cfg(feature = "expanding")]
+    fn get_scale_factor(&self) -> f64 {
+        self.scale_factor_solver.solver.get_a()
+    }
+
+    #[cfg(feature = "expanding")]
+    fn get_scale_factor_T(&self) -> T {
+        T::from_f64(self.scale_factor_solver.solver.get_a()).unwrap()
+    }
 }
 
 
@@ -869,6 +904,14 @@ fn test_new_sim_parameters() {
     let k2_cutoff: f64 = 0.95;
     let alias_threshold: f64 = 0.02;
     let hbar_ = None;
+    #[cfg(feature = "expanding")]
+    let cosmo_params = CosmologyParameters {
+        h: 0.7,
+        omega_matter_now: 0.3,
+        omega_radiation_now: 0.0,
+        z0: 1.0,
+        max_dloga: Some(1e-2),
+    };
 
     let params = SimulationParameters::<T>::new(
         axis_length,
@@ -884,6 +927,8 @@ fn test_new_sim_parameters() {
         hbar_,
         dims,
         size,
+        #[cfg(feature = "expanding")]
+        cosmo_params
     );
     println!("{}", params);
 }

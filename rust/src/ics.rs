@@ -4,7 +4,7 @@ use crate::{
         grid::{normalize, check_norm, Dimensions},
         complex::complex_constant,
         fft::{forward_inplace, get_kgrid},
-    },
+    }, expanding::CosmologyParameters,
 };
 use arrayfire::{Array, ComplexFloating, HasAfEnum, FloatingPoint, Dim4, add, mul, exp, random_uniform, conjg, arg, div, abs, Fromf64, ConstGenerator, RandomEngine};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
@@ -630,6 +630,14 @@ fn test_cold_gauss_initialization() {
     let k2_cutoff = 0.95;
     let alias_threshold = 0.02;
     let hbar_ = None;
+    #[cfg(feature = "expanding")]
+    let cosmo_params = CosmologyParameters {
+        h: 0.7,
+        omega_matter_now: 0.7,
+        omega_radiation_now: 0.0,
+        max_dloga: Some(1e-2),
+        z0: 1.0,
+    };
 
     let parameters = SimulationParameters::<T>::new(
         axis_length,
@@ -644,7 +652,9 @@ fn test_cold_gauss_initialization() {
         alias_threshold,
         hbar_,
         num::FromPrimitive::from_usize(K).unwrap(),
-        S
+        S,
+        #[cfg(feature = "expanding")]
+        cosmo_params,
     );
 
     // Create a Simulation Object using Gaussian parameters and
