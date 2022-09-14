@@ -461,6 +461,7 @@ where
 
 
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
+    #[cfg(not(feature = "expanding"))]
     pub fn update(&mut self, verbose: bool) -> Result<()> {
 
         // If this is the first timestep, populate the kspace grid with the correct values
@@ -593,8 +594,150 @@ where
         Ok(())
     }
 
+    /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
+    #[cfg(feature = "expanding")]
+    pub fn update(&mut self, verbose: bool) -> Result<()> {
+
+        // If this is the first timestep, populate the kspace grid with the correct values
+        if self.parameters.n_steps == 0 {
+            println!("Initializing k-space wavefunction");
+            self.grid.ψk = self.forward(&self.grid.ψ).unwrap();
+        };
+
+        // Begin timer for update loop
+        let now = Instant::now();
+
+        // Initial checks
+        debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
+        debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
+
+        // Calculate potential at t
+        self.calculate_potential();
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
+        // Compute timestep
+        let (dump, dtau) = self.get_timestep();
+
+        // Update kinetic half-step
+        // exp(-(dt/2) * (k^2 / 2)) = exp(-dt/4 * k^2)
+        let k_evolution: Array<Complex<T>> = exp(
+            &mul(
+                &complex_constant(Complex::<T>::new(T::zero(), - dtau / T::from_f64(4.0).unwrap()), (1,1,1,1)),
+                &self.parameters.spec_grid.cast(),
+                true
+            )
+        );
+        // These are the fields with kinetic at t + dt/2 but momentum at t
+        self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
+        debug_assert!(check_complex_for_nans(&self.grid.ψk));
+        debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
+        self.grid.ψ = self.inverse(&self.grid.ψk).unwrap();
+        debug_assert!(check_complex_for_nans(&self.grid.ψ));
+        debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
+        self.calculate_potential();
+        debug_assert!(check_complex_for_nans(&self.grid.φ));
+
+        // Update momentum a half-step twice (evolving a in between)
+        for _ in 0..2 {
+            // exp(- (dt/2 * a(t)) φ ) =
+            let a = self.get_scale_factor_T();
+            let r_evolution: Array<Complex<T>> = exp(
+                &mul(
+                    &complex_constant(Complex::<T>::new(T::zero(), - dtau / T::from_f64(2.0).unwrap() * a), (1, 1, 1, 1)),
+                    &self.grid.φ.cast(),
+                    true
+                )
+            );
+            // these are the fields with kinetic at t + dt/2 but momentum at t + dt/2 
+            self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
+            debug_assert!(check_complex_for_nans(&self.grid.ψ));
+            debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
+
+            // TODO: Turn dtau / 2 into Myr
+            let dt_inMyr = dtau; 
+
+            self.scale_factor_solver.solver.step_forward(dt_inMyr.to_f64().unwrap());
+        }
+        self.grid.ψk = self.forward(&self.grid.ψ).unwrap();
+        debug_assert!(check_complex_for_nans(&self.grid.ψk));
+        debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
+
+
+        // Update kinetic from t + dt/2 to t + dt
+        // exp(-(dt/2) * (k^2/2) / h) = exp(-dt/4/h * k^2)
+        let k_evolution: Array<Complex<T>> = exp(
+            &mul(
+                &complex_constant(Complex::<T>::new(T::zero(), - dtau / T::from_f64(4.0).unwrap()), (1,1,1,1)),
+                &self.parameters.spec_grid.cast(),
+                true
+            )
+        );
+        // Now all fields have kinetic + momentum at t + dt
+        self.grid.ψk = mul(&self.grid.ψk, &k_evolution, false);
+        debug_assert!(check_complex_for_nans(&self.grid.ψk));
+        debug_assert!(check_norm::<T>(&self.grid.ψk, self.parameters.dk, self.parameters.dims));
+        self.grid.ψ = self.inverse(&self.grid.ψk)?;
+        debug_assert!(check_complex_for_nans(&self.grid.ψ));
+        debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
+
+        // Update time
+        self.parameters.time = self.parameters.time + dtau;
+
+        // Print estimate of time to completion
+        let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.final_sim_time - self.parameters.time)/dt)).unwrap_or(1);
+        if verbose {println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));}
+
+        // Check for Fourier Aliasing
+        let aliased = self.check_alias();
+        if aliased.is_some() {
+            println!("currently aliased!");
+            // If above threshold, bail and report aliasing
+            bail!(RuntimeError::FourierAliasing {
+                threshold: self.parameters.alias_threshold as f32,
+                k2_cutoff: self.parameters.k2_cutoff as f32,
+                p_mass: T::to_f32(&aliased.unwrap()).unwrap()
+            });
+        }
+
+        // Perform data dump if appropriate
+        if dump {
+
+            // Increment before dump for proper dump name
+            self.parameters.current_dumps = self.parameters.current_dumps + 1;
+
+            // Dump wavefunction
+            self.dump();
+
+            // TODO: fix for initial_time != 0
+            self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap();
+        }        
+
+        // Increment wall time counter, step counter
+        self.parameters.sim_wall_time += now.elapsed().as_millis();
+        self.parameters.n_steps += 1;
+
+        // If finished, wait for I/O to finish
+        if !self.not_finished() {
+            while self.active_io.len() > 0 {
+
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                // Steal all done threads from active_io
+                let done_threads = self.active_io
+                    .drain_filter(|io| io.is_finished());
+
+                for io in done_threads {
+                    println!("I/O took {} millis", io.join().unwrap().elapsed().as_millis());
+                }
+                
+            }
+        }
+        
+        Ok(())
+    }
+
     /// This function computes the max timestep we can take, a constraint given by the minimum
     /// of the maximum kinetic, potential timesteps such that the wavefunction phase moves by >=2pi.
+    #[cfg(not(feature = "expanding"))]
     pub fn get_timestep(&self) -> (bool, T) {
 
         // Max kinetic dt
@@ -607,6 +750,41 @@ where
         // Max potential dt
         let potential_max: T = max_all(&abs(&self.grid.φ)).0;
         let potential_dt: T = self.parameters.cfl * T::from_f64(2.0 * std::f64::consts::PI).unwrap() * self.parameters.hbar_ / ( T::from_f64(2.0).unwrap() * potential_max );
+        debug_assert!(potential_dt.is_finite());
+        debug_assert!(potential_dt.is_sign_positive());
+        debug_assert!(!potential_dt.is_zero());
+
+        // Time to next data dump
+        // TODO: fix for initial_time != 0
+        let time_to_next_dump = (T::from_u32(self.parameters.current_dumps + 1).unwrap() * self.parameters.final_sim_time / T::from_u32(self.parameters.num_data_dumps).unwrap()) - self.parameters.time; 
+
+        // Take smallest of all time steps
+        let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
+        println!("kinetic = {:.4e}; potential = {:.4e}; kinetic/potential = {}; time to next {time_to_next_dump:.4e}", kinetic_dt, potential_dt, kinetic_dt/potential_dt);
+
+        // If taking time_to_next_dump, return dump flag
+        let mut dump = false;
+        if dt == time_to_next_dump { dump = true; println!("dump dt"); }
+
+        // Return dump flag and timestep
+        (dump, dt)
+    }
+
+    /// This function computes the max timestep we can take, a constraint given by the minimum
+    /// of the maximum kinetic, potential timesteps such that the wavefunction phase moves by >=2pi.
+    #[cfg(feature = "expanding")]
+    pub fn get_timestep(&self) -> (bool, T) {
+
+        // Max kinetic dt
+        // max(k^2)/2
+        let kinetic_dt: T = self.parameters.cfl * T::from_f64(2.0).unwrap() * self.parameters.axis_length / self.parameters.k2_max.sqrt();
+        debug_assert!(kinetic_dt.is_finite(), "kinetic_dt is {}; hbar_ is {}",  kinetic_dt, self.parameters.hbar_);
+        debug_assert!(kinetic_dt.is_sign_positive(),  "kinetic_dt is {}; hbar_ is {}", kinetic_dt, self.parameters.hbar_);
+        debug_assert!(!kinetic_dt.is_zero(), "kinetic_dt is {}; hbar_ is {}", kinetic_dt, self.parameters.hbar_);
+
+        // Max potential dt
+        let potential_max: T = max_all(&abs(&self.grid.φ)).0;
+        let potential_dt: T = self.parameters.cfl * T::from_f64(2.0 * std::f64::consts::PI).unwrap() / ( T::from_f64(2.0 * self.scale_factor_solver.solver.get_a()).unwrap() * potential_max);
         debug_assert!(potential_dt.is_finite());
         debug_assert!(potential_dt.is_sign_positive());
         debug_assert!(!potential_dt.is_zero());
@@ -669,7 +847,7 @@ where
     pub fn calculate_potential(&mut self) {
 
         // Compute space density and perform inplace fft
-        // note: this is using memory location of self.grid.φ
+        // note: this is using memory location of self.grid.φ, overwriting previous value.
         self.calculate_density();
         debug_assert!(check_complex_for_nans(&self.grid.φ));
         self.forward_potential_inplace().expect("failed to do forward fft for potential");
@@ -680,24 +858,20 @@ where
             &mul(
                 &Array::new(
                     &[Complex::<T>::new(
-                        if cfg!(feature = "expanding") {
-                            // In expanding universe, scale POIS_CONST by scale factor squared
-                            T::from_f64(-POIS_CONST * self.get_scale_factor().powi(2)).unwrap() 
-                        } else {
-                            T::from_f64(-POIS_CONST).unwrap()
-                        },
+                        #[cfg(feature = "expanding")] // laplacian psi = |psi|^2 -1 implies phi(k) = density / (ik)^2
+                        -T::one(),
+                        #[cfg(not(feature = "expanding"))] // laplacian psi = POIS_CONST * (|psi|^2 -1)  implies phi(k) = POIS_CONST * density / (ik)^2
+                        T::from_f64(-POIS_CONST).unwrap(),
                         T::zero()
                     )],
                     Dim4::new(&[1,1,1,1])
                 ),
-                &
-                self.grid.φ,
+                &self.grid.φ, // consistent with the note above, at this point in the code this is the density.
                 true
             ),
             &self.parameters.spec_grid.cast(),
             false
         );
-
 
         // Populate 0 mode with 0.0
         let cond = isnan(&self.grid.φ);
