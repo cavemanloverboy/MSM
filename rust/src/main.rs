@@ -37,7 +37,6 @@ fn main() {
         println!("Working on simulation {}", simulation_object.parameters.sim_name);
         println!("Simulation Parameters\n{}", simulation_object.parameters);
         println!("Physical Constants\nHBAR = {HBAR}\nPOIS_CONSTANT = {POIS_CONST}");
-        sleep(std::time::Duration::from_secs(3));
 
         // Main evolve loop
         let start = Instant::now();

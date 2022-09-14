@@ -683,8 +683,8 @@ where
         self.parameters.time = self.parameters.time + dtau;
 
         // Print estimate of time to completion
-        let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.final_sim_time - self.parameters.time)/dt)).unwrap_or(1);
-        if verbose {println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dt, std::time::Duration::from_millis(estimate as u64));}
+        let estimate = now.elapsed().as_millis() * T::to_u128(&((self.parameters.final_sim_time - self.parameters.time)/dtau)).unwrap_or(1);
+        if verbose {println!("update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ", now.elapsed().as_millis(), self.parameters.time, dtau, std::time::Duration::from_millis(estimate as u64));}
 
         // Check for Fourier Aliasing
         let aliased = self.check_alias();
