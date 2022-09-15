@@ -1,7 +1,7 @@
 axis_length                 = 30
 final_sim_time              = 400 # for drift multiple = 100 --> 71.6197243914
 cfl                         = 0.5
-num_data_dumps              = 100
+num_data_dumps              = 1
 total_mass                  = 1e10
 #particle_mass              = None
 hbar_                       = 0.02
@@ -9,7 +9,7 @@ sim_name                    = "gaussian-overdensity-512-mft"
 k2_cutoff                   = 0.95
 alias_threshold             = 0.02
 dims                        = 3
-size                        = 512
+size                        = 64
 
 ics                         = { ColdGaussMFT = { mean = [15, 15, 15], std = [10, 10, 10] } } #, scheme = "Husimi", sample_seed = 0 } }
 

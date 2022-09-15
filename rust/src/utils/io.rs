@@ -145,11 +145,11 @@ pub fn array_to_dim4(
 
 /// This function reads toml files
 pub fn read_toml<T: DeserializeOwned>(
-    path: String
+    path: &str
 ) -> T {
 
     // Read toml config file
-    let toml_contents: &str = &std::fs::read_to_string(&path).expect(format!("Unable to load toml and parse as string: {}", &path).as_str());
+    let toml_contents: &str = &std::fs::read_to_string(path).expect(format!("Unable to load toml and parse as string: {}", &path).as_str());
 
     // Return parsed toml from str
     toml::from_str(toml_contents).expect("Could not parse toml file contents")

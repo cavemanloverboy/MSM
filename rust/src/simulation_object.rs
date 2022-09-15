@@ -248,6 +248,8 @@ where
         write!(f, "dims                = {}\n", self.dims as usize)?;
         write!(f, "size                = {}\n", self.size as usize)?;
         write!(f, "{}\n","-".repeat(40))?;
+        #[cfg(feature = "expanding")]
+        write!(f,"{:#?}", self.cosmo_params);
         Ok(())
     }
 }
@@ -335,7 +337,7 @@ where
     /// A constructor function which returns a `SimulationObject` from a user's toml.
     #[allow(unreachable_patterns)]
     pub fn new_from_toml(
-        path: String,
+        path: &str,
     ) -> Self {
 
         // Read in simulations parameters from user's toml

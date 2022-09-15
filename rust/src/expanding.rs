@@ -28,7 +28,7 @@ pub struct ScaleFactorSolver {
 
 pub const DEFAULT_MAX_DLOGA: f64 = 1e-3;
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 /// A helper struct. Deserialized from a simulation's toml file.
 #[cfg(feature = "expanding")]
 pub struct CosmologyParameters {

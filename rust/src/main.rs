@@ -25,7 +25,7 @@ fn main() {
     let args = CommandLineArguments::parse();
     
     // Given a set of tomls, define simulation objects and run sims
-    for toml in args.toml.clone() {
+    for toml in &args.toml {
 
         // New sim obj from toml
         let mut simulation_object = SimulationObject::<f64>::new_from_toml(toml);
