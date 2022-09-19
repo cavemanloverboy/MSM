@@ -113,7 +113,7 @@ impl ScaleFactorSolver {
         #[cfg(any(test, debug_assertions))]
         let t0 = 1.0;
         #[cfg(not(any(test, debug_assertions)))]
-        let t0 = todo!();
+        let t0 = 1.0; //todo!();
 
         let solver = InnerScaleFactorSolver::new(
             cosmo_parameters.as_inner_params(),
@@ -131,7 +131,7 @@ impl ScaleFactorSolver {
     }
 
     /// Steps forward by `dt` and returns the value of the scale factor.
-    #[cfg(not(fake_expanding_solver))]
+    #[cfg(not(feature = "fake_expanding_solver"))]
     fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
 
         // Step forward
@@ -142,7 +142,7 @@ impl ScaleFactorSolver {
     }
 
     /// Placeholder with scale_factor = 1 for all time.
-    #[cfg(fake_expanding_solver)]
+    #[cfg(feature = "fake_expanding_solver")]
     fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
         T::one()
     }

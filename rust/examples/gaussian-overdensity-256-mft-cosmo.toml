@@ -9,7 +9,7 @@ sim_name                    = "gaussian-overdensity-512-mft"
 k2_cutoff                   = 0.95
 alias_threshold             = 0.02
 dims                        = 3
-size                        = 64
+size                        = 32
 
 ics                         = { ColdGaussMFT = { mean = [15, 15, 15], std = [10, 10, 10] } } #, scheme = "Husimi", sample_seed = 0 } }
 

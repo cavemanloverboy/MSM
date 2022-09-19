@@ -2,7 +2,7 @@ use arrayfire::{
     Array, ComplexFloating, HasAfEnum, FloatingPoint, ConstGenerator, Dim4, Fromf64,
     mul, real, conjg, exp, max_all, div, replace_scalar, isnan, abs
 };
-use cosmology::scale_factor::CosmologicalParameters;
+use cosmology::scale_factor::{CosmologicalParameters, rk4};
 use crate::{
     constants::{POIS_CONST, HBAR},
     utils::{
@@ -249,7 +249,7 @@ where
         write!(f, "size                = {}\n", self.size as usize)?;
         write!(f, "{}\n","-".repeat(40))?;
         #[cfg(feature = "expanding")]
-        write!(f,"{:#?}", self.cosmo_params);
+        write!(f,"{:#?}", self.cosmo_params)?;
         Ok(())
     }
 }
@@ -344,9 +344,9 @@ where
         let toml: TomlParameters = read_toml(path);
 
         // Extract required parameters from toml
-        let axis_length: T = T::from_f64(toml.axis_length).unwrap();
+        let mut axis_length: T = T::from_f64(toml.axis_length).unwrap();
         let time: T = T::from_f64(toml.time.unwrap_or(0.0)).unwrap();
-        let final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
+        let mut final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
         let cfl: T = T::from_f64(toml.cfl).unwrap();
         let num_data_dumps: u32 = toml.num_data_dumps;
         let total_mass: f64 = toml.total_mass;
@@ -355,6 +355,7 @@ where
         let alias_threshold: f64 = toml.alias_threshold;
         let dims = num::FromPrimitive::from_usize(toml.dims).unwrap();
         let size = toml.size;
+
 
         // Calculate overdetermined parameters
         let particle_mass;
@@ -397,6 +398,14 @@ where
                  can specify hbar_tilde in addition to one of the first two if you'd like to change
                  the value of planck's constant itself."
                 )
+        }
+
+        #[cfg(feature = "expanding")]
+        {
+            // Convert final sim time to tau
+            final_sim_time = T::from_f64(get_final_sim_tau(toml.final_sim_time, toml.cosmology, toml.axis_length)).unwrap();
+            // Convert axis length
+            axis_length = T::from_f64(get_super_comoving_boxsize(hbar_, toml.cosmology, toml.axis_length)).unwrap();
         }
 
         // Construct `SimulationParameters`
@@ -655,7 +664,7 @@ where
             debug_assert!(check_norm::<T>(&self.grid.ψ, self.parameters.dx, self.parameters.dims));
 
             // TODO: Turn dtau / 2 into Myr
-            let dt_inMyr = dtau; 
+            let dt_inMyr = dtau / T::from(2.0).unwrap(); 
 
             self.scale_factor_solver.solver.step_forward(dt_inMyr.to_f64().unwrap());
         }
@@ -1140,3 +1149,58 @@ fn test_lt_gt() {
     println!("lt sum is {}", arrayfire::sum_all(&array1).0);
 
 }
+
+
+
+fn get_final_sim_tau(
+    final_sim_time: f64,
+    cosmo_params: CosmologyParameters,
+    axis_length: f64,
+) -> f64 {
+
+    // Initialize cosmo solver
+    let scale_factor_solver = std::sync::Mutex::new(ScaleFactorSolver::new(cosmo_params));
+
+    let dtau_dt = |t: f64, tau: f64| -> f64 {
+        
+        // Get a for this time
+        let a_at_t = {
+            let solver_step = t - scale_factor_solver.lock().unwrap().solver.get_time();
+            scale_factor_solver.lock().unwrap().solver.step_forward(solver_step);
+            scale_factor_solver.lock().unwrap().solver.get_a()
+        };
+
+        // (3/2 * H_0^2 * Omega_m0)^(1/2) / a^2
+        (1.5 * cosmo_params.omega_matter_now * (LITTLE_H_TO_BIG_H * cosmo_params.h).powi(2)).sqrt() / a_at_t.powi(2)
+    };
+
+    let mut tau = 0.0;
+    let mut time = 0.0;
+    let mut dt = final_sim_time/ 1000.0;
+    while time < final_sim_time {
+
+        if let Some(max_dloga) = cosmo_params.max_dloga {
+            dt = (final_sim_time/ 1000.0)
+                .min(scale_factor_solver.lock().unwrap().solver.get_a() / scale_factor_solver.lock().unwrap().solver.get_dadt() * max_dloga);
+        }
+
+
+        tau = rk4(&dtau_dt, time, tau, dt, None);
+    }
+
+    
+    dbg!(tau)
+}
+
+fn get_super_comoving_boxsize(
+    hbar_: f64,
+    cosmo_params: CosmologyParameters,
+    axis_length: f64,
+) -> f64 {
+    ((1.5 * cosmo_params.omega_matter_now * (LITTLE_H_TO_BIG_H * cosmo_params.h).powi(2)).sqrt() / hbar_).sqrt() * axis_length
+}
+
+
+/// Multiplicative factor used to turn h to H in units of 1/Myr.
+/// (i.e. 100 km/s/Mpc converted to 1/Myr)
+pub const LITTLE_H_TO_BIG_H: f64 = 1.022e-4;

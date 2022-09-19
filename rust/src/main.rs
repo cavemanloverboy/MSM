@@ -15,8 +15,8 @@ pub struct CommandLineArguments {
 fn main() {
 
     // Set to gpu if available
-    set_device(0);
-    println!("{:?}", device_info());
+    // set_device(0);
+    // println!("{:?}", device_info());
 
     // Start timer
     let now = Instant::now();
@@ -31,7 +31,7 @@ fn main() {
         let mut simulation_object = SimulationObject::<f64>::new_from_toml(toml);
 
         // Dump initial condition
-        simulation_object.dump();
+        // simulation_object.dump();
 
         // Print simulation parameters and physical constants
         println!("Working on simulation {}", simulation_object.parameters.sim_name);
