@@ -1,10 +1,9 @@
 #![feature(drain_filter)]
 
 pub mod constants;
+pub mod ics;
 pub mod simulation_object;
 pub mod utils;
-pub mod ics;
-
 
 #[cfg(feature = "expanding")]
 pub mod expanding;

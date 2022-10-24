@@ -1,9 +1,7 @@
-
 #[test]
 fn test_variance_of_arrayfire_randn() {
-    use arrayfire::{random_normal, RandomEngine, Array, mul, add, var_all, real, imag, Dim4};
+    use arrayfire::{add, imag, mul, random_normal, real, var_all, Array, Dim4, RandomEngine};
     use num::Complex;
-
 
     const S: u64 = 128;
     const K: u32 = 3;
@@ -13,7 +11,6 @@ fn test_variance_of_arrayfire_randn() {
 
     let dims = Dim4::new(&[S.pow(K), 1, 1, 1]);
     let normals: Array<Complex<f64>> = add(
-        
         &mul::<Array<f64>, Complex<f64>>(
             &random_normal(dims, &engine),
             &Complex::new(1.0, 0.0),
@@ -24,7 +21,7 @@ fn test_variance_of_arrayfire_randn() {
             &Complex::new(0.0, 1.0),
             true,
         ),
-        false
+        false,
     );
 
     println!("{:?}", var_all(&real(&normals), false));
@@ -33,7 +30,7 @@ fn test_variance_of_arrayfire_randn() {
 
 #[test]
 fn test_seeds() {
-    use arrayfire::{random_normal, RandomEngine, Array, mul, add, var_all, real, imag, Dim4};
+    use arrayfire::{add, imag, mul, random_normal, real, var_all, Array, Dim4, RandomEngine};
     use num::Complex;
 
     const S: usize = 8;

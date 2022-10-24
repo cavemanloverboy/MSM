@@ -2,7 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum RuntimeError {
-
     #[error("Failed to write to disk")]
     IOError,
 
@@ -13,7 +12,7 @@ pub enum RuntimeError {
     FourierAliasing {
         threshold: f32,
         k2_cutoff: f32,
-        p_mass: f32
+        p_mass: f32,
     },
 }
 

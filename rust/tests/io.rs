@@ -1,12 +1,8 @@
-
-
-
 #[test]
 fn test_io() {
-
     use arrayfire::Array;
-    use std::io::Read;
     use msm::utils::io::*;
+    use std::io::Read;
 
     // Specifiy size, type
     const S: usize = 4;
@@ -32,16 +28,17 @@ fn test_io() {
     let mut npz = NpzWriter::new(File::create("data.npz").unwrap());
     npz.add_array("host", &host);
     npz.finish();
-    
+
     // Write to npy
     npy::to_file("data.npy", host).unwrap();
-
 
     // Read
     use npy::NpyData;
     let mut buf = vec![];
-    std::fs::File::open("data.npy").unwrap()
-        .read_to_end(&mut buf).unwrap();
+    std::fs::File::open("data.npy")
+        .unwrap()
+        .read_to_end(&mut buf)
+        .unwrap();
     let data: NpyData<T> = NpyData::from_bytes(&buf).unwrap();
 }
 
