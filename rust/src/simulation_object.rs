@@ -745,13 +745,13 @@ where
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
                 // Steal all done threads from active_io
-                let done_threads = self.active_io.drain_filter(|io| io.is_finished());
+                let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
                 for io in done_threads {
-                    println!(
-                        "I/O took {} millis",
-                        io.join().unwrap().elapsed().as_millis()
-                    );
+                    // println!(
+                    //     "I/O took {} millis",
+                    //     io.join().unwrap().elapsed().as_millis()
+                    // );
                 }
             }
         }
@@ -932,13 +932,13 @@ where
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
                 // Steal all done threads from active_io
-                let done_threads = self.active_io.drain_filter(|io| io.is_finished());
+                let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
                 for io in done_threads {
-                    println!(
-                        "I/O took {} millis",
-                        io.join().unwrap().elapsed().as_millis()
-                    );
+                    // println!(
+                    //     "I/O took {} millis",
+                    //     io.join().unwrap().elapsed().as_millis()
+                    // );
                 }
             }
         }
@@ -1177,14 +1177,13 @@ where
             .expect("failed to make directory");
 
         // Check to see which are active
-        println!("{:?}", &self.active_io);
         while self.active_io.len() >= MAX_CONCURRENT_GRID_WRITES * 2 {
             // factor of 2 is here for real + imag
 
             std::thread::sleep(std::time::Duration::from_millis(10));
 
             // Steal all done threads from active_io
-            let done_threads = self.active_io.drain_filter(|io| io.is_finished());
+            let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
             for io in done_threads {
                 println!(
@@ -1472,3 +1471,19 @@ fn get_super_comoving_boxsize(
 /// Multiplicative factor used to turn h to H in units of 1/Myr.
 /// (i.e. 100 km/s/Mpc converted to 1/Myr)
 pub const LITTLE_H_TO_BIG_H: f64 = 1.022e-4;
+
+fn drain_filter<T, P>(items: &mut Vec<T>, predicate: P) -> Vec<T>
+where
+    P: Fn(&T) -> bool,
+{
+    let mut drained_values = vec![];
+    let mut i = 0;
+    while i < items.len() {
+        if predicate(&items[i]) {
+            drained_values.push(items.swap_remove(i))
+        } else {
+            i += 1;
+        }
+    }
+    drained_values
+}

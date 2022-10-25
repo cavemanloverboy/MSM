@@ -1,5 +1,3 @@
-#![feature(drain_filter)]
-
 pub mod constants;
 pub mod ics;
 pub mod simulation_object;
