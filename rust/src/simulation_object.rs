@@ -623,7 +623,7 @@ where
         let (dump, dt) = self.get_timestep();
 
         // Update kinetic half-step
-        // exp(-(dt/2) * (k^2 / 2) / h_) = exp(-dt/4/h_ * k^2)
+        // exp(-(dt/2) * (k^2 / 2) * h_) = exp(-dt/4 * h_ * k^2)
         let k_evolution: Array<Complex<T>> = exp(&mul(
             &complex_constant(
                 Complex::<T>::new(
@@ -681,7 +681,7 @@ where
         ));
 
         // Update kinetic from t + dt/2 to t + dt
-        // exp(-(dt/2) * (k^2/2) / h) = exp(-dt/4/h * k^2)
+        // exp(-(dt/2) * (k^2/2) * h_) = exp(-dt/4 * h_ * k^2)
         let k_evolution: Array<Complex<T>> = exp(&mul(
             &complex_constant(
                 Complex::<T>::new(
