@@ -1,5 +1,6 @@
+#[cfg(feature = "expanding")]
+use crate::expanding::CosmologyParameters;
 use crate::{
-    expanding::CosmologyParameters,
     simulation_object::*,
     utils::{
         complex::complex_constant,

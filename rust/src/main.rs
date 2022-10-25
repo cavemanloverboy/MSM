@@ -29,7 +29,7 @@ fn main() {
         let mut simulation_object = SimulationObject::<f64>::new_from_toml(toml);
 
         // Dump initial condition
-        // simulation_object.dump();
+        simulation_object.dump();
 
         // Print simulation parameters and physical constants
         println!(

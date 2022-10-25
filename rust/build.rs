@@ -82,16 +82,6 @@ fn build_arrayfire() {
 
 #[tokio::main(flavor = "current_thread")]
 async fn download_file(url: &'static str) -> Result<(), Box<dyn Error>> {
-    // // Get response from url
-    // let response = reqwest::get(url).await?;
-
-    // // File save destination
-    // let mut dest = File::create("./af_installer.sh")?;
-
-    // // Copy content to file
-    // let content = response.text().await?;
-    // copy(&mut content.as_bytes(), &mut dest)?;
-
     std::process::Command::new("wget")
         .args([url, "--output-document=af_installer.sh"])
         .output()

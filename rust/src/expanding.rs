@@ -8,6 +8,7 @@ use serde_derive::Deserialize;
 /// Only flat LCDM (w = 1) cosmologies are supported.
 /// An internal helper struct that is used to model the
 /// evolution of the cosmological scale factor a(t).
+#[derive(Clone)]
 pub struct ScaleFactorSolver {
     /// Cosmological parameters retrieve from the toml
     pub cosmo_parameters: CosmologyParameters,

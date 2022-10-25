@@ -10,6 +10,7 @@ import toml
 import gc
 
 sim_name = "gaussian-overdensity-512-stream00001"
+sim_name = "spherical-tophat"
 sim = f"sim_data/{sim_name}/psi_?????_real"
 # sim = "sim_data/spherical-tophat/psi*"
 drops = np.sort(glob.glob(sim))
@@ -20,6 +21,7 @@ fps = 20
 shell_volume = lambda R, r: 4 * np.pi / 3 * (R**3 - r**3)
 
 path_to_toml = f"./examples/go-streams/{sim_name}.toml"
+path_to_toml = f"./examples/{sim_name}.toml"
 toml_file = open(path_to_toml, "r")
 toml_contents = toml_file.read()
 
