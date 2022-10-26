@@ -13,7 +13,7 @@ pub fn complex_array_to_disk<T>(
     path: String,
     array: &Array<Complex<T>>,
     shape: [u64; 4],
-) -> Result<Vec<JoinHandle<Instant>>>
+) -> Result<Vec<JoinHandle<u128>>>
 where
     T: Float + HasAfEnum + WritableElement + Send + 'static + Sync,
     Complex<T>: HasAfEnum,
@@ -45,7 +45,7 @@ where
 
         array_to_disk(real_path, &real).expect("write to disk in parallel failed");
 
-        timer
+        timer.elapsed().as_millis()
     });
     let imag_handle: std::thread::JoinHandle<_> = spawn(move || {
         // Gather imag values
@@ -59,7 +59,7 @@ where
 
         array_to_disk(imag_path, &imag).expect("write to disk in parallel failed");
 
-        timer
+        timer.elapsed().as_millis()
     });
 
     Ok(vec![real_handle, imag_handle])

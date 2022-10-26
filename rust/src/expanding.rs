@@ -21,7 +21,7 @@ pub struct ScaleFactorSolver {
     pub t0: f64,
 
     /// On-the-fly solver
-    pub solver: InnerScaleFactorSolver,
+    solver: InnerScaleFactorSolver,
 }
 
 pub const DEFAULT_MAX_DLOGA: f64 = 1e-3;
@@ -97,10 +97,8 @@ impl ScaleFactorSolver {
             "You've discovered radiation with negative energy; pick an omega_radiation_now >= 0.0"
         );
 
-        #[cfg(any(test, debug_assertions))]
-        let t0 = 1.0;
-        #[cfg(not(any(test, debug_assertions)))]
-        let t0 = 1.0; //todo!();
+        // a(t_0) = 1 / ( 1 + z )
+        let t0 = 0.0;
 
         let solver = InnerScaleFactorSolver::new(
             cosmo_parameters.as_inner_params(),
@@ -116,10 +114,12 @@ impl ScaleFactorSolver {
             solver,
         }
     }
+}
 
+#[cfg(not(feature = "fake_expanding_solver"))]
+impl ScaleFactorSolver {
     /// Steps forward by `dt` and returns the value of the scale factor.
-    #[cfg(not(feature = "fake_expanding_solver"))]
-    fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
+    pub(crate) fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
         // Step forward
         self.solver.step_forward(dt.to_f64().unwrap());
 
@@ -127,9 +127,37 @@ impl ScaleFactorSolver {
         T::from_f64(self.solver.get_a()).unwrap()
     }
 
-    /// Placeholder with scale_factor = 1 for all time.
-    #[cfg(feature = "fake_expanding_solver")]
-    fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
+    pub(crate) fn get_a(&self) -> f64 {
+        self.solver.get_a()
+    }
+
+    pub(crate) fn get_dadt(&self) -> f64 {
+        self.solver.get_dadt()
+    }
+
+    pub(crate) fn get_time(&self) -> f64 {
+        self.solver.get_time()
+    }
+}
+
+/// Placeholder with scale_factor = 1 for all time.
+#[cfg(feature = "fake_expanding_solver")]
+impl ScaleFactorSolver {
+    /// Steps forward by `dt` and returns the value of the scale factor.
+    pub(crate) fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
+        self.solver.step_forward(dt.to_f64().unwrap());
         T::one()
+    }
+
+    pub(crate) fn get_a(&self) -> f64 {
+        1.0
+    }
+
+    pub(crate) fn get_dadt(&self) -> f64 {
+        0.0
+    }
+
+    pub(crate) fn get_time(&self) -> f64 {
+        self.solver.get_time()
     }
 }
