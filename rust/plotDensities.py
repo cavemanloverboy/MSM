@@ -11,9 +11,12 @@ import gc
 
 sim_name = "gaussian-overdensity-512-stream00001"
 sim_name = "spherical-tophat"
+sim_name = "spherical-tophat-cosmo"
 sim = f"sim_data/{sim_name}/psi_?????_real"
+potentials = f"sim_data/{sim_name}/potential_?????_real"
 # sim = "sim_data/spherical-tophat/psi*"
 drops = np.sort(glob.glob(sim))
+potentials = np.sort(glob.glob(potentials))
 
 fps = 20
 
@@ -45,8 +48,12 @@ def radial_profile(drop):
 	# this is psi, but naming rho to reuse memory
 	rho = np.load(f"{drop}") + 1j*np.load(f"{drop[:-5]}_imag")
 
+	# potential
+	potential_drop = potentials[list(drops).index(drop)]
+	potential = np.load(f"{potential_drop}")
+
 	# getting psi_k_sq out of psi, presently named rho
-	psi_k_sq = np.abs(np.fft.fftshift(np.fft.fftn(rho)))**2
+	psi_k_sq = np.abs(np.fft.fftshift(np.fft.fftn(rho, norm="ortho")))**2
 
 	# after this it is rho, psi is discarded
 	rho = np.abs(rho)**2
@@ -70,25 +77,34 @@ def radial_profile(drop):
 		M_diff = M_r[i] - M_r[i-1]
 		rho_r.append(M_diff / shell_volume(R[i], R[i-1]))
 
-	plt.figure(figsize=(24,8))
-	plt.subplot(131)
+	plt.figure(figsize=(32,8))
+	plt.subplot(141)
 	plt.xlabel(r"$x\ [kpc]$")
 	plt.ylabel(r"$y\ [kpc]$")
 	plt.title("Projected Spatial Density")
 	plt.imshow(rho.mean(0), interpolation = 'none', 
         extent=[-L/2., L/2., -L/2,L/2], 
         aspect = 'auto', origin = 'lower', cmap = 'viridis')
+	plt.clim()
 
-	plt.subplot(132)
+	plt.subplot(142)
 	plt.imshow(psi_k_sq.mean(0), interpolation = 'none', 
         extent=[np.min(u),np.max(u), np.min(u),np.max(u)], 
         aspect = 'auto', origin = 'lower',cmap = 'viridis')
-
 	plt.xlabel(r"$u_x \, [kpc / Myr]$")
 	plt.ylabel(r"$u_y \, [kpc / Myr]$")
 	plt.title("Projected Momentum Density")
 
-	plt.subplot(133)
+	plt.subplot(143)
+	# plt.imshow(potential.mean(0), interpolation = 'none', 
+    #     extent=[-L/2., L/2., -L/2,L/2], 
+    #     aspect = 'auto', origin = 'lower',cmap = 'viridis')
+	plt.plot(potential.min(axis=0).min(axis=0))
+	plt.xlabel(r"$x\ [kpc]$")
+	plt.ylabel(r"$y\ [kpc]$")
+	plt.title("Projected Gravitational Potential")
+
+	plt.subplot(144)
 	plt.loglog(R, rho_r)
 	plt.xlabel(r"$R\ [kpc]$")
 	plt.ylabel(r"$\rho(R), [M_\odot\ kpc^{-3}]$")
@@ -162,7 +178,10 @@ if __name__ == "__main__":
 
 	with imageio.get_writer(output_name, fps=fps) as writer:
 
-		images = pqdm(drops, radial_profile, n_jobs=20)
+		# Parallel
+		images = pqdm(drops, radial_profile, n_jobs=40)
+
+		# Nonparallel
 		# images = []
 		# for drop in drops:
 		# 	images.append(radial_profile(drop))
