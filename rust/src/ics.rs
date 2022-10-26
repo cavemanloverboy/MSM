@@ -240,12 +240,12 @@ where
         "Only 3-D is supported for the spherical tophat"
     );
 
-    // Proper distance
-    let real_dx = parameters.axis_length / T::from(parameters.size).unwrap();
+    // Grid spacing (uses axis length to support feature = "expanding" being on or off)
+    let dx = parameters.axis_length / T::from(parameters.size).unwrap();
 
     // Construct spatial grid
     let x: Vec<T> = (0..parameters.size)
-        .map(|i| T::from_usize(2 * i + 1).unwrap() * real_dx / T::from_f64(2.0).unwrap())
+        .map(|i| T::from_usize(2 * i + 1).unwrap() * dx / T::from_f64(2.0).unwrap())
         .collect();
     let y = &x;
     let z = &x;
