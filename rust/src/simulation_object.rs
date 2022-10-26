@@ -1295,6 +1295,21 @@ where
             .unwrap(),
         );
 
+        // output potential
+        self.calculate_potential(); // debug TODO; might be redundant but its ok for now
+        self.active_io.append(
+            &mut complex_array_to_disk(
+                format!(
+                    "{sim_data_folder}/{}/potential_{:05}",
+                    self.parameters.sim_name, self.parameters.current_dumps
+                ),
+                &self.grid.φ,
+                shape,
+            )
+            .context(RuntimeError::IOError)
+            .unwrap(),
+        );
+
         self.pb.set_style(
             ProgressStyle::default_bar()
                 .template("[{elapsed_precise}] {bar:20.cyan/blue} {pos:>5}/{len:5} {msg}"),
@@ -1416,6 +1431,7 @@ where
     }
 
     #[cfg(feature = "expanding")]
+    #[allow(non_snake_case)]
     fn get_scale_factor_T(&self) -> T {
         T::from_f64(self.scale_factor_solver.get_a()).unwrap()
     }
@@ -1465,6 +1481,7 @@ where
             .unwrap()
             .sub(self.parameters.time);
 
+            // TODO: remove after all debugging is complete
             // let approx_init_dt = ((1.5
             //     * self.parameters.cosmo_params.omega_matter_now
             //     * (LITTLE_H_TO_BIG_H * self.parameters.cosmo_params.h).powi(2))
@@ -1473,6 +1490,7 @@ where
             // .recip()
             //     * dtau.to_f64().unwrap();
             // println!("dt = {dt}, dtau = {dtau}, approx dt = {approx_init_dt}");
+
             dt
         }
     }
