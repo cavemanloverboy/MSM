@@ -1,9 +1,7 @@
 use arrayfire::{device_info, set_device};
 use clap::Parser;
-use log::LevelFilter;
 use msm::constants::*;
 use msm::simulation_object::*;
-use std::thread::sleep;
 use std::time::Instant;
 
 #[derive(Parser)]
@@ -15,8 +13,8 @@ pub struct CommandLineArguments {
 }
 fn main() {
     // Set to gpu if available
-    // set_device(0);
-    // println!("{:?}", device_info());
+    set_device(0);
+    println!("{:?}", device_info());
 
     env_logger::builder()
         .format_timestamp_secs()
