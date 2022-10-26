@@ -1,5 +1,6 @@
 use arrayfire::{device_info, set_device};
 use clap::Parser;
+use log::LevelFilter;
 use msm::constants::*;
 use msm::simulation_object::*;
 use std::thread::sleep;
@@ -17,6 +18,11 @@ fn main() {
     // set_device(0);
     // println!("{:?}", device_info());
 
+    env_logger::builder()
+        .format_timestamp_secs()
+        // .filter_level(LevelFilter::Debug)
+        .init();
+
     // Start timer
     let now = Instant::now();
 
@@ -28,16 +34,16 @@ fn main() {
         // New sim obj from toml
         let mut simulation_object = SimulationObject::<f64>::new_from_toml(toml);
 
-        // Dump initial condition
-        simulation_object.dump();
-
         // Print simulation parameters and physical constants
         println!(
             "Working on simulation {}",
             simulation_object.parameters.sim_name
         );
         println!("Simulation Parameters\n{}", simulation_object.parameters);
-        println!("Physical Constants\nHBAR = {HBAR}\nPOIS_CONSTANT = {POIS_CONST}");
+        println!("Physical Constants\nHBAR = {HBAR:.5e}\nPOIS_CONSTANT = {POIS_CONST:.5e}");
+
+        // Dump initial condition
+        simulation_object.dump();
 
         // Main evolve loop
         let start = Instant::now();

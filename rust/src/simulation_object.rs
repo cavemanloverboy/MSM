@@ -19,12 +19,16 @@ use arrayfire::{
 };
 #[cfg(feature = "expanding")]
 use cosmology::scale_factor::CosmologicalParameters;
+use indicatif::{ProgressBar, ProgressStyle};
 use ndarray_npy::{ReadableElement, WritableElement};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
-use std::fmt::{Display, LowerExp};
 use std::thread::JoinHandle;
 use std::time::Instant;
+use std::{
+    f64::consts::PI,
+    fmt::{Display, LowerExp},
+};
 
 // Maximum number of concurrent writes to disk ()
 const MAX_CONCURRENT_GRID_WRITES: usize = 200;
@@ -58,8 +62,11 @@ where
 #[derive(Clone)]
 pub struct SimulationParameters<T: Float + FloatingPoint> {
     // Grid Parameters
-    /// Physical length of each axis
+    /// Physical length of each axis (if expanding, this is the initial length)
     pub axis_length: T,
+    /// Physical length of each axis
+    #[cfg(feature = "expanding")]
+    pub comoving_boxsize: T,
     /// Spatial cell size
     pub dx: T,
     /// k-space cell size
@@ -81,6 +88,9 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     pub tau: T,
     /// Total simulation time
     pub final_sim_time: T,
+    /// Total simulation time (comoving)
+    #[cfg(feature = "expanding")]
+    pub final_sim_tau: T,
     /// Total number of data dumps
     pub num_data_dumps: u32,
     /// Current number of data dumps
@@ -146,7 +156,10 @@ where
     pub parameters: SimulationParameters<T>,
 
     /// Active io
-    pub active_io: Vec<JoinHandle<Instant>>,
+    pub active_io: Vec<JoinHandle<u128>>,
+
+    /// Progress bar
+    pub pb: ProgressBar,
 
     #[cfg(feature = "expanding")]
     scale_factor_solver: ScaleFactorSolver,
@@ -205,31 +218,40 @@ where
         size: usize,
         #[cfg(feature = "expanding")] cosmo_params: CosmologyParameters,
     ) -> Self {
-        // Overconstrained or default parameters
-        let dx = axis_length / T::from_usize(size).unwrap();
-        //let dk = U::from_f64(2.0).unwrap() * U::from_f64(std::f64::consts::PI).unwrap() / axis_length;
-        let dk = dx; //TODO: figure out why thiis works //U::one() / axis_length / U::from_usize(S).unwrap();
-                     //let dk = get_kgrid::<U, S>(dx)[1];
-        let current_dumps = 0;
-
         let hbar_: T = T::from_f64(hbar_.unwrap_or(HBAR / particle_mass)).unwrap();
-        let time_steps = 0;
-
-        let spec_grid = spec_grid::<T>(dx, dims, size);
-
-        let k2_max: T = max_all(&spec_grid).0;
-        let sim_wall_time = 0;
-
-        let n_tot = total_mass / particle_mass;
-        let n_steps = 0;
 
         #[cfg(feature = "expanding")]
-        let tau = T::from(get_final_sim_tau(
-            time.to_f64().unwrap(),
+        let tau = T::from(get_tau(time.to_f64().unwrap(), cosmo_params)).unwrap();
+        #[cfg(feature = "expanding")]
+        let final_sim_tau =
+            T::from(get_tau(final_sim_time.to_f64().unwrap(), cosmo_params)).unwrap();
+        #[cfg(feature = "expanding")]
+        let comoving_boxsize = T::from(get_supercomoving_boxsize(
+            hbar_.to_f64().unwrap(),
             cosmo_params,
             axis_length.to_f64().unwrap(),
         ))
         .unwrap();
+
+        // Overconstrained parameters
+        #[cfg(not(feature = "expanding"))]
+        let dx = axis_length / T::from_usize(size).unwrap();
+        #[cfg(feature = "expanding")]
+        let dx = comoving_boxsize / T::from_usize(size).unwrap();
+        let dk = dx;
+        let n_tot = total_mass / particle_mass;
+
+        // Counter variables
+        let current_dumps = 0;
+        let time_steps = 0;
+        let n_steps = 0;
+        let sim_wall_time = 0;
+
+        // Spectral grid
+        let spec_grid = spec_grid::<T>(dx, dims, size);
+        let k2_max: T = max_all(&spec_grid).0;
+
+        log::debug!("spec_grid k2 max is {k2_max}");
 
         SimulationParameters {
             axis_length,
@@ -255,9 +277,13 @@ where
             dims,
             n_steps,
             #[cfg(feature = "expanding")]
+            comoving_boxsize,
+            #[cfg(feature = "expanding")]
             cosmo_params,
             #[cfg(feature = "expanding")]
             tau,
+            #[cfg(feature = "expanding")]
+            final_sim_tau,
         }
     }
 
@@ -276,6 +302,8 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}\n", "-".repeat(40))?;
         write!(f, "axis_length         = {:.6e}\n", self.axis_length)?;
+        #[cfg(feature = "expanding")]
+        write!(f, "comoving_boxsize    = {:.6e}\n", self.comoving_boxsize)?;
         write!(f, "dx                  = {:.6e}\n", self.dx)?;
         write!(f, "current_time        = {:.6e}\n", self.time)?;
         write!(f, "final_sim_time      = {:.6e}\n", self.final_sim_time)?;
@@ -368,12 +396,15 @@ where
             cosmo_params,
         );
 
+        let pb = ProgressBar::new(num_data_dumps as u64);
+
         let sim_obj = SimulationObject {
             grid,
             parameters,
             active_io: vec![],
             #[cfg(feature = "expanding")]
             scale_factor_solver: ScaleFactorSolver::new(cosmo_params),
+            pb,
         };
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
@@ -393,12 +424,15 @@ where
         // Construct components
         let grid = SimulationGrid::<T>::new(ψ);
 
+        let pb = ProgressBar::new(parameters.num_data_dumps as u64);
+
         let sim_obj = SimulationObject {
             grid,
             #[cfg(feature = "expanding")]
             scale_factor_solver: ScaleFactorSolver::new(parameters.cosmo_params),
             parameters,
             active_io: vec![],
+            pb,
         };
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
@@ -420,9 +454,10 @@ where
         let toml: TomlParameters = read_toml(path);
 
         // Extract required parameters from toml
-        let mut axis_length: T = T::from_f64(toml.axis_length).unwrap();
+        let axis_length: T = T::from_f64(toml.axis_length).unwrap();
         let time: T = T::from_f64(toml.time.unwrap_or(0.0)).unwrap();
-        let mut final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
+        #[allow(unused_assignments)]
+        let final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
         let cfl: T = T::from_f64(toml.cfl).unwrap();
         let num_data_dumps: u32 = toml.num_data_dumps;
         let total_mass: f64 = toml.total_mass;
@@ -467,24 +502,6 @@ where
                  can specify hbar_tilde in addition to one of the first two if you'd like to change
                  the value of planck's constant itself."
             )
-        }
-
-        #[cfg(feature = "expanding")]
-        {
-            // Convert final sim time to tau
-            final_sim_time = T::from_f64(get_final_sim_tau(
-                toml.final_sim_time,
-                toml.cosmology,
-                toml.axis_length,
-            ))
-            .unwrap();
-            // Convert axis length
-            axis_length = T::from_f64(get_super_comoving_boxsize(
-                hbar_,
-                toml.cosmology,
-                toml.axis_length,
-            ))
-            .unwrap();
         }
 
         // Construct `SimulationParameters`
@@ -570,6 +587,8 @@ where
         #[cfg(feature = "expanding")]
         let scale_factor_solver = ScaleFactorSolver::new(toml.cosmology);
 
+        let pb = ProgressBar::new(num_data_dumps as u64);
+
         // Pack grid and parameters into `Simulation Object`
         let sim_obj = SimulationObject {
             grid,
@@ -577,6 +596,7 @@ where
             active_io: vec![],
             #[cfg(feature = "expanding")]
             scale_factor_solver,
+            pb,
         };
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
@@ -784,6 +804,8 @@ where
     #[cfg(feature = "expanding")]
     pub fn update(&mut self, verbose: bool) -> Result<()> {
         // If this is the first timestep, populate the kspace grid with the correct values
+
+        use indicatif::ProgressStyle;
         if self.parameters.n_steps == 0 {
             println!("Initializing k-space wavefunction");
             self.grid.ψk = self.forward(&self.grid.ψ).unwrap();
@@ -840,7 +862,7 @@ where
 
         // Update momentum a half-step twice (evolving a in between)
         for _ in 0..2 {
-            // exp(- (dt/2 * a(t)) φ ) =
+            // exp(- (dt/2 * a(t)) φ )
             let a = self.get_scale_factor_T();
             let r_evolution: Array<Complex<T>> = exp(&mul(
                 &complex_constant(
@@ -850,7 +872,8 @@ where
                 &self.grid.φ.cast(),
                 true,
             ));
-            // these are the fields with kinetic at t + dt/2 but momentum at t + dt/2
+
+            // do the half-step
             self.grid.ψ = mul(&self.grid.ψ, &r_evolution, false);
             debug_assert!(check_complex_for_nans(&self.grid.ψ));
             debug_assert!(check_norm::<T>(
@@ -859,13 +882,13 @@ where
                 self.parameters.dims
             ));
 
-            // TODO: Turn dtau / 2 into Myr
-            let dt_in_megayears = self.calculate_dt_from_dtau(dtau / T::from(2.0).unwrap());
+            // Find what dtau / 2 is in megayears
+            let dt_over_2_in_megayears = self.calculate_dt_from_dtau(dtau / T::from(2.0).unwrap());
 
-            // The solver (external library) qexpects megayears as f64
+            // The solver (external library) expects megayears as f64
             self.scale_factor_solver
-                .solver
-                .step_forward(dt_in_megayears.to_f64().unwrap());
+                .step(dt_over_2_in_megayears.to_f64().unwrap());
+            self.parameters.time = self.parameters.time + dt_over_2_in_megayears;
         }
         self.grid.ψk = self.forward(&self.grid.ψ).unwrap();
         debug_assert!(check_complex_for_nans(&self.grid.ψk));
@@ -876,7 +899,7 @@ where
         ));
 
         // Update kinetic from t + dt/2 to t + dt
-        // exp(-(dt/2) * (k^2/2) / h) = exp(-dt/4/h * k^2)
+        // exp(-(dt/2) * (k^2/2) / h) = exp(-dt/4 * k^2)
         let k_evolution: Array<Complex<T>> = exp(&mul(
             &complex_constant(
                 Complex::<T>::new(T::zero(), -dtau / T::from_f64(4.0).unwrap()),
@@ -901,18 +924,24 @@ where
             self.parameters.dims
         ));
 
-        // Update time
-        self.parameters.time = self.parameters.time + dtau;
+        // Update time (comoving)
+        self.parameters.tau = self.parameters.tau + dtau;
 
         // Print estimate of time to completion
         let estimate = now.elapsed().as_millis()
-            * T::to_u128(&((self.parameters.final_sim_time - self.parameters.time) / dtau))
+            * T::to_u128(&((self.parameters.final_sim_tau - self.parameters.tau) / dtau))
                 .unwrap_or(1);
+
+        // Increment wall time counter, step counter
+        self.parameters.sim_wall_time += now.elapsed().as_millis();
+        self.parameters.n_steps += 1;
+
         if verbose {
             println!(
-                "update took {} millis, current sim time is {:e}, dt is {:e}. ETA {:?} ",
+                "update took {} millis, current sim time is {:.5e} (z = {:.3}), dtau is {:.3e}. ETA {:?} ",
                 now.elapsed().as_millis(),
                 self.parameters.time,
+                self.get_scale_factor().recip() - 1.0,
                 dtau,
                 std::time::Duration::from_millis(estimate as u64)
             );
@@ -942,11 +971,12 @@ where
             self.parameters.time = T::from_u32(self.parameters.current_dumps).unwrap()
                 * self.parameters.final_sim_time
                 / T::from_u32(self.parameters.num_data_dumps).unwrap();
+            self.parameters.tau = T::from(get_tau(
+                self.parameters.time.to_f64().unwrap(),
+                self.parameters.cosmo_params,
+            ))
+            .unwrap();
         }
-
-        // Increment wall time counter, step counter
-        self.parameters.sim_wall_time += now.elapsed().as_millis();
-        self.parameters.n_steps += 1;
 
         // If finished, wait for I/O to finish
         if !self.not_finished() {
@@ -961,6 +991,7 @@ where
                     //     "I/O took {} millis",
                     //     io.join().unwrap().elapsed().as_millis()
                     // );
+                    drop(io)
                 }
             }
         }
@@ -1033,38 +1064,39 @@ where
     /// of the maximum kinetic, potential timesteps such that the wavefunction phase moves by >=2pi.
     #[cfg(feature = "expanding")]
     pub fn get_timestep(&self) -> (bool, T) {
-        // Max kinetic dt
+        // Max kinetic dtau
         // max(k^2)/2
-        let kinetic_dt: T =
-            self.parameters.cfl * T::from_f64(2.0).unwrap() * self.parameters.axis_length
+        let kinetic_dtau: T =
+            self.parameters.cfl * T::from_f64(2.0).unwrap() * self.parameters.comoving_boxsize
                 / self.parameters.k2_max.sqrt();
         debug_assert!(
-            kinetic_dt.is_finite(),
-            "kinetic_dt is {}; hbar_ is {}",
-            kinetic_dt,
+            kinetic_dtau.is_finite(),
+            "kinetic_dtau is {}; hbar_ is {}",
+            kinetic_dtau,
             self.parameters.hbar_
         );
         debug_assert!(
-            kinetic_dt.is_sign_positive(),
-            "kinetic_dt is {}; hbar_ is {}",
-            kinetic_dt,
+            kinetic_dtau.is_sign_positive(),
+            "kinetic_dtau is {}; hbar_ is {}",
+            kinetic_dtau,
             self.parameters.hbar_
         );
         debug_assert!(
-            !kinetic_dt.is_zero(),
-            "kinetic_dt is {}; hbar_ is {}",
-            kinetic_dt,
+            !kinetic_dtau.is_zero(),
+            "kinetic_dtau is {}; hbar_ is {}",
+            kinetic_dtau,
             self.parameters.hbar_
         );
 
-        // Max potential dt
+        // Max potential dtau
         let potential_max: T = max_all(&abs(&self.grid.φ)).0;
-        let potential_dt: T = self.parameters.cfl
+        log::debug!("potential_max is {potential_max}");
+        let potential_dtau: T = self.parameters.cfl
             * T::from_f64(2.0 * std::f64::consts::PI).unwrap()
-            / (T::from_f64(2.0 * self.scale_factor_solver.solver.get_a()).unwrap() * potential_max);
-        debug_assert!(potential_dt.is_finite());
-        debug_assert!(potential_dt.is_sign_positive());
-        debug_assert!(!potential_dt.is_zero());
+            / (T::from_f64(2.0 /* * self.scale_factor_solver.get_a() */).unwrap() * potential_max);
+        debug_assert!(potential_dtau.is_finite());
+        debug_assert!(potential_dtau.is_sign_positive());
+        debug_assert!(!potential_dtau.is_zero());
 
         // Time to next data dump
         // TODO: fix for initial_time != 0
@@ -1072,20 +1104,26 @@ where
             * self.parameters.final_sim_time
             / T::from_u32(self.parameters.num_data_dumps).unwrap())
             - self.parameters.time;
+        let tau_to_next_dump = T::from(get_tau(
+            (self.parameters.time + time_to_next_dump).to_f64().unwrap(),
+            self.parameters.cosmo_params,
+        ))
+        .unwrap()
+            - self.parameters.tau;
 
         // Take smallest of all time steps
-        let dt = kinetic_dt.min(potential_dt).min(time_to_next_dump);
-        println!("kinetic = {:.4e}; potential = {:.4e}; kinetic/potential = {}; time to next {time_to_next_dump:.4e}", kinetic_dt, potential_dt, kinetic_dt/potential_dt);
+        let dtau = kinetic_dtau.min(potential_dtau).min(tau_to_next_dump);
+        // println!("kinetic = {:.4e}; potential = {:.4e}; kinetic/potential = {}; time to next {time_to_next_dump:.4e}", kinetic_dtau, potential_dtau, kinetic_dtau/potential_dtau);
 
         // If taking time_to_next_dump, return dump flag
         let mut dump = false;
-        if dt == time_to_next_dump {
+        if dtau == tau_to_next_dump {
             dump = true;
-            println!("dump dt");
+            // println!("dump dtau {}", self.parameters.current_dumps);
         }
 
         // Return dump flag and timestep
-        (dump, dt)
+        (dump, dtau)
     }
 
     /// This function computes the shape of the grid
@@ -1128,9 +1166,26 @@ where
 
     /// This function computes the space density
     pub fn calculate_density(&mut self) {
-        // We reuse the memory for φ
+        // critical density * omega0 in solar masses / kpc^3
+        // POIS_CONST = 4 * PI * G --> 8 * PI * G = 2 * POIS_CONST
+
+        #[cfg(feature = "expanding")]
+        let critical_mass_density = 3.0
+            * (self.parameters.cosmo_params.h * LITTLE_H_TO_BIG_H).powi(2)
+            * self.parameters.cosmo_params.omega_matter_now
+            / (2.0 * POIS_CONST);
+        #[cfg(feature = "expanding")]
+        let dx_ratio = (self.parameters.axis_length / self.parameters.comoving_boxsize)
+            .powi(-self.parameters.dims.to_i32().unwrap());
+        #[cfg(feature = "expanding")]
+        let normalization = self.get_scale_factor().powi(3) / critical_mass_density;
+
+        // We reuse the memory for φ to store the density
         self.grid.φ = mul(
             &Array::new(
+                #[cfg(feature = "expanding")]
+                &[dx_ratio * T::from_f64(normalization * self.parameters.total_mass).unwrap()],
+                #[cfg(not(feature = "expanding"))]
                 &[T::from_f64(self.parameters.total_mass).unwrap()],
                 Dim4::new(&[1, 1, 1, 1]),
             ),
@@ -1138,6 +1193,21 @@ where
             true,
         )
         .cast();
+
+        #[cfg(feature = "expanding")]
+        if log::log_enabled!(log::Level::Debug) {
+            let density_max = max_all(&abs(&self.grid.φ)).0;
+            log::debug!("density max is {density_max}");
+            // log::debug!(
+            //     "hubble value [1 / Myr] is {}",
+            //     self.parameters.cosmo_params.h * LITTLE_H_TO_BIG_H
+            // );
+            // log::debug!(
+            //     "scale factor T cubed is {}",
+            //     self.get_scale_factor_T().powi(3)
+            // );
+            // log::debug!("critical mass density is {critical_mass_density}");
+        }
     }
 
     /// This function calculates the potential for the stream
@@ -1150,7 +1220,7 @@ where
             .expect("failed to do forward fft for potential");
         debug_assert!(check_complex_for_nans(&self.grid.φ));
 
-        // Compute potential in k-space and perform inplace inverse fft
+        // Compute potential in k-space
         self.grid.φ = div(
             &mul(
                 &Array::new(
@@ -1179,9 +1249,9 @@ where
             arrayfire::eq(&cond, &Array::new(&value, Dim4::new(&[1, 1, 1, 1])), true);
         replace_scalar(&mut self.grid.φ, &cond, 0.0);
 
+        // Perform inverse fft inplace
         self.inverse_potential_inplace()
             .expect("failed to do inverse fft for potential");
-
         debug_assert!(check_complex_for_nans(&self.grid.φ));
 
         self.grid.φ = real(&self.grid.φ).cast();
@@ -1208,10 +1278,7 @@ where
             let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
             for io in done_threads {
-                println!(
-                    "I/O took {} millis",
-                    io.join().unwrap().elapsed().as_millis()
-                );
+                // println!("I/O took {} millis", io.join().unwrap());
             }
         }
 
@@ -1227,11 +1294,20 @@ where
             .context(RuntimeError::IOError)
             .unwrap(),
         );
+
+        self.pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:20.cyan/blue} {pos:>5}/{len:5} {msg}"),
+        );
+        self.pb
+            .set_message(format!("z = {}", self.get_scale_factor().recip() - 1.0));
+        self.pb.inc(1);
     }
 
     /// This function checks if simulation is done
     pub fn not_finished(&self) -> bool {
         self.parameters.time < self.parameters.final_sim_time
+            && self.parameters.tau < self.parameters.final_sim_tau
     }
 
     /// This function outputs a text file
@@ -1336,12 +1412,12 @@ where
 
     #[cfg(feature = "expanding")]
     fn get_scale_factor(&self) -> f64 {
-        self.scale_factor_solver.solver.get_a()
+        self.scale_factor_solver.get_a()
     }
 
     #[cfg(feature = "expanding")]
     fn get_scale_factor_T(&self) -> T {
-        T::from_f64(self.scale_factor_solver.solver.get_a()).unwrap()
+        T::from_f64(self.scale_factor_solver.get_a()).unwrap()
     }
 
     /// Calculates dtau/dt / a^2, a constant for a cosmo simulation
@@ -1352,26 +1428,53 @@ where
         let hubble = self.parameters.cosmo_params.h * LITTLE_H_TO_BIG_H;
         let om0 = self.parameters.cosmo_params.omega_matter_now;
 
-        T::from((3.0 / 2.0 * hubble.powi(2) * om0).powi(-2)).unwrap()
+        T::from((1.5 * hubble.powi(2) * om0).sqrt()).unwrap()
     }
 
     /// This function calculates the RK4 dt for a given dtau.
     #[cfg(feature = "expanding")]
     fn calculate_dt_from_dtau(&self, dtau: T) -> T {
-        // Clone current solver state
-        let solver_state = self.scale_factor_solver.clone();
+        unsafe {
+            // Clone current solver state
+            let solver_state = std::cell::UnsafeCell::new(self.scale_factor_solver.clone());
 
-        // Define derivative_function
-        let derivative_function = |tau: f64, time: f64| -> f64 { 1.0 };
+            // Define derivative_function dt_dtau
+            let dt_dtau = |tau: f64, t: f64| -> f64 {
+                // Get a at this time
+                let a_at_t = {
+                    let solver_step = t - (*solver_state.get()).get_time();
+                    (*solver_state.get()).step(solver_step)
+                };
 
-        T::from(rk4(
-            derivative_function,
-            self.parameters.tau.to_f64().unwrap(),
-            self.parameters.time.to_f64().unwrap(),
-            dtau.to_f64().unwrap(),
-            None,
-        ))
-        .unwrap()
+                // reciprocal of (3/2 * H_0^2 * Omega_m0)^(1/2) / a^2
+                ((1.5
+                    * self.parameters.cosmo_params.omega_matter_now
+                    * (LITTLE_H_TO_BIG_H * self.parameters.cosmo_params.h).powi(2))
+                .sqrt()
+                    / a_at_t.powi(2))
+                .recip()
+            };
+
+            let dt = T::from(rk4(
+                dt_dtau,
+                self.parameters.tau.to_f64().unwrap(),
+                self.parameters.time.to_f64().unwrap(),
+                dtau.to_f64().unwrap(),
+                None,
+            ))
+            .unwrap()
+            .sub(self.parameters.time);
+
+            // let approx_init_dt = ((1.5
+            //     * self.parameters.cosmo_params.omega_matter_now
+            //     * (LITTLE_H_TO_BIG_H * self.parameters.cosmo_params.h).powi(2))
+            // .sqrt()
+            //     / (1.0 / 101.0).powi(2))
+            // .recip()
+            //     * dtau.to_f64().unwrap();
+            // println!("dt = {dt}, dtau = {dtau}, approx dt = {approx_init_dt}");
+            dt
+        }
     }
 }
 
@@ -1467,26 +1570,21 @@ fn test_lt_gt() {
 }
 
 #[cfg(feature = "expanding")]
-fn get_final_sim_tau(
-    final_sim_time: f64,
-    cosmo_params: CosmologyParameters,
-    axis_length: f64,
-) -> f64 {
+fn get_tau(target_time: f64, cosmo_params: CosmologyParameters) -> f64 {
+    // SAFETY: this is safe because access are done sequentially on one thread.
+    // This is only used because the function dtau_dt pased into the scale factor solver expects
+    // an Fn(..) not an FnMut(..). Other primitives like a Mutex *could* be used.
+    // Only the .get()s are unsafe methods but a block is used for readability.
     unsafe {
         // Initialize cosmo solver.
-        // This is done using a Mutex due to restrictions on Fn(f64, f64)
-        // let scale_factor_solver = std::sync::Mutex::new(ScaleFactorSolver::new(cosmo_params));
-        let mut scale_factor_solver =
-            std::cell::UnsafeCell::new(ScaleFactorSolver::new(cosmo_params));
+        // This is done using a an unsafe cell due to restrictions on Fn(f64, f64)
+        let scale_factor_solver = std::cell::UnsafeCell::new(ScaleFactorSolver::new(cosmo_params));
 
         let dtau_dt = |t: f64, tau: f64| -> f64 {
             // Get a for this time
             let a_at_t = {
-                let solver_step = t - (*scale_factor_solver.get()).solver.get_time();
-                (*scale_factor_solver.get())
-                    .solver
-                    .step_forward(solver_step);
-                (*scale_factor_solver.get()).solver.get_a()
+                let solver_step = t - (*scale_factor_solver.get()).get_time();
+                (*scale_factor_solver.get()).step(solver_step)
             };
 
             // (3/2 * H_0^2 * Omega_m0)^(1/2) / a^2
@@ -1495,35 +1593,41 @@ fn get_final_sim_tau(
                 / a_at_t.powi(2)
         };
 
+        // Initialize tau(t=0) = 0;
         let mut tau = 0.0;
         let mut time = 0.0;
-        let mut dt = final_sim_time / 1000.0;
-        while time < final_sim_time {
+
+        let mut dt = target_time / 1000.0;
+        while time < target_time {
             if let Some(max_dloga) = cosmo_params.max_dloga {
-                dt = (final_sim_time / 1000.0).min(
-                    (*scale_factor_solver.get()).solver.get_a()
-                        / (*scale_factor_solver.get()).solver.get_dadt()
+                dt = (target_time / 1000.0).min(
+                    (*scale_factor_solver.get()).get_a() / (*scale_factor_solver.get()).get_dadt()
                         * max_dloga,
                 );
             }
+            dt = dt.min(target_time - time);
 
+            // Step tau and time forward
             tau = rk4(&dtau_dt, time, tau, dt, None);
+            time += dt;
         }
 
-        dbg!(tau)
+        tau
     }
 }
 
 #[cfg(feature = "expanding")]
-fn get_super_comoving_boxsize(
+fn get_supercomoving_boxsize(
     hbar_: f64,
     cosmo_params: CosmologyParameters,
     axis_length: f64,
 ) -> f64 {
+    // (3/2 * H^2 * Omo)^(1/4) * (1/hbar)^(1/2)
     ((1.5 * cosmo_params.omega_matter_now * (LITTLE_H_TO_BIG_H * cosmo_params.h).powi(2)).sqrt()
         / hbar_)
         .sqrt()
         * axis_length
+        * (1.0 + cosmo_params.z0).recip()
 }
 
 /// Multiplicative factor used to turn h to H in units of 1/Myr.

@@ -16,6 +16,7 @@ const MAC_3_8_0_INSTALLER: &'static str =
     "https://arrayfire.s3.amazonaws.com/3.7.2/ArrayFire-3.7.2_OSX_x86_64.pkg";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    println!("cargo:rerun-if-changed=./arrayfire/");
     println!(
         "cargo:rustc-env=AF_PATH={}",
         env::current_dir().unwrap().join("arrayfire").display()
