@@ -23,24 +23,24 @@ use std::iter::Iterator;
 
 #[derive(Serialize, Deserialize)]
 pub enum InitialConditions {
-    UserSpecified {
-        path: String,
-    },
-    ColdGaussMFT {
-        mean: Vec<f64>,
-        std: Vec<f64>,
-    },
+    /// Loads user specified initial conditions
+    UserSpecified { path: String },
+    /// A real (phases = 0) gaussian in real space
+    ColdGaussMFT { mean: Vec<f64>, std: Vec<f64> },
+    /// A field sampled from some quantum distribution of a real (phases = 0) gaussian in real space
     ColdGaussMSM {
         mean: Vec<f64>,
         std: Vec<f64>,
         scheme: SamplingScheme,
         sample_seed: Option<u64>,
     },
+    /// A real (phases = 0) gaussian in fourier space
     ColdGaussKSpaceMFT {
         mean: Vec<f64>,
         std: Vec<f64>,
         phase_seed: Option<u64>,
     },
+    /// A field sampled from some quantum distribution of a real (phases = 0) gaussian in fourier space
     ColdGaussKSpaceMSM {
         mean: Vec<f64>,
         std: Vec<f64>,
@@ -48,10 +48,15 @@ pub enum InitialConditions {
         phase_seed: Option<u64>,
         sample_seed: Option<u64>,
     },
-    SphericalTophat {
+    /// A spherical tophat in real space
+    SphericalTophat { radius: f64, delta: f64, slope: f64 },
+    /// A field sampled from some quantum distribution of a tophat in real space
+    SphericalTophatMSM {
         radius: f64,
         delta: f64,
         slope: f64,
+        scheme: SamplingScheme,
+        sample_seed: Option<u64>,
     },
 }
 
@@ -305,6 +310,55 @@ where
     // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
 
     SimulationObject::<T>::new_with_parameters(ψ, parameters.clone())
+}
+
+pub fn spherical_tophat_quantum<T>(
+    parameters: &SimulationParameters<T>,
+    radius: f64,
+    delta: f64,
+    slope: f64,
+    scheme: SamplingScheme,
+    seed: Option<u64>,
+) -> SimulationGrid<T>
+where
+    T: Float
+        + FloatingPoint
+        + FromPrimitive
+        + Display
+        + Fromf64
+        + ConstGenerator<OutType = T>
+        + HasAfEnum<AggregateOutType = T>
+        + HasAfEnum<InType = T>
+        + HasAfEnum<AbsOutType = T>
+        + HasAfEnum<BaseType = T>
+        + Fromf64
+        + WritableElement
+        + ReadableElement
+        + std::fmt::LowerExp
+        + FloatConst
+        + Send
+        + Sync
+        + 'static,
+    Complex<T>: HasAfEnum
+        + ComplexFloating
+        + FloatingPoint
+        + HasAfEnum<ComplexOutType = Complex<T>>
+        + HasAfEnum<UnaryOutType = Complex<T>>
+        + HasAfEnum<AggregateOutType = Complex<T>>
+        + HasAfEnum<AbsOutType = T>
+        + HasAfEnum<BaseType = T>
+        + HasAfEnum<ArgOutType = T>
+        + ConstGenerator<OutType = Complex<T>>,
+    rand_distr::Standard: Distribution<T>,
+{
+    // Get mft grid
+    let mut mft_grid = spherical_tophat(parameters, radius, delta, slope).grid;
+
+    // Add perturbations to grid
+    sample_quantum_perturbation(&mut mft_grid, parameters, scheme, seed);
+
+    // Return mft grid with perturbations
+    mft_grid
 }
 
 pub fn cold_gauss_kspace<T>(

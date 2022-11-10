@@ -19,7 +19,7 @@ use arrayfire::{
 };
 #[cfg(feature = "expanding")]
 use cosmology::scale_factor::CosmologicalParameters;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use ndarray_npy::{ReadableElement, WritableElement};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
@@ -31,7 +31,7 @@ use std::{
 };
 
 // Maximum number of concurrent writes to disk ()
-const MAX_CONCURRENT_GRID_WRITES: usize = 200;
+const MAX_CONCURRENT_GRID_WRITES: usize = 2;
 
 /// This struct holds the grids which store the wavefunction, its Fourier transform, and other grids
 pub struct SimulationGrid<T>
@@ -396,7 +396,7 @@ where
             cosmo_params,
         );
 
-        let pb = ProgressBar::new(num_data_dumps as u64);
+        let pb = ProgressBar::with_draw_target(num_data_dumps as u64, ProgressDrawTarget::stdout());
 
         let sim_obj = SimulationObject {
             grid,
@@ -424,7 +424,10 @@ where
         // Construct components
         let grid = SimulationGrid::<T>::new(ψ);
 
-        let pb = ProgressBar::new(parameters.num_data_dumps as u64);
+        let pb = ProgressBar::with_draw_target(
+            parameters.num_data_dumps as u64,
+            ProgressDrawTarget::stdout(),
+        );
 
         let sim_obj = SimulationObject {
             grid,
@@ -448,7 +451,6 @@ where
     }
 
     /// A constructor function which returns a `SimulationObject` from a user's toml.
-    #[allow(unreachable_patterns)]
     pub fn new_from_toml(path: &str) -> Self {
         // Read in simulations parameters from user's toml
         let toml: TomlParameters = read_toml(path);
@@ -581,13 +583,27 @@ where
                 slope,
             } => spherical_tophat::<T>(&parameters, radius, delta, slope).grid,
 
-            _ => todo!("You must have passed an enum for a set of ics that is not yet implemented"),
+            // Spherical Tophat (Quantum)
+            InitialConditions::SphericalTophatMSM {
+                radius,
+                delta,
+                slope,
+                scheme,
+                sample_seed,
+            } => spherical_tophat_quantum::<T>(
+                &parameters,
+                radius,
+                delta,
+                slope,
+                scheme,
+                sample_seed,
+            ),
         };
 
         #[cfg(feature = "expanding")]
         let scale_factor_solver = ScaleFactorSolver::new(toml.cosmology);
 
-        let pb = ProgressBar::new(num_data_dumps as u64);
+        let pb = ProgressBar::with_draw_target(num_data_dumps as u64, ProgressDrawTarget::stdout());
 
         // Pack grid and parameters into `Simulation Object`
         let sim_obj = SimulationObject {
@@ -784,7 +800,7 @@ where
                 // Steal all done threads from active_io
                 let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
-                for io in done_threads {
+                for _io in done_threads {
                     // println!(
                     //     "I/O took {} millis",
                     //     io.join().unwrap().elapsed().as_millis()
@@ -1053,7 +1069,7 @@ where
         let mut dump = false;
         if dt == time_to_next_dump {
             dump = true;
-            println!("dump dt");
+            // println!("dump dt");
         }
 
         // Return dump flag and timestep
@@ -1277,7 +1293,7 @@ where
             // Steal all done threads from active_io
             let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
 
-            for io in done_threads {
+            for _io in done_threads {
                 // println!("I/O took {} millis", io.join().unwrap());
             }
         }
@@ -1295,34 +1311,36 @@ where
             .unwrap(),
         );
 
-        // output potential
-        self.calculate_potential(); // debug TODO; might be redundant but its ok for now
-        self.active_io.append(
-            &mut complex_array_to_disk(
-                format!(
-                    "{sim_data_folder}/{}/potential_{:05}",
-                    self.parameters.sim_name, self.parameters.current_dumps
-                ),
-                &self.grid.φ,
-                shape,
-            )
-            .context(RuntimeError::IOError)
-            .unwrap(),
-        );
+        // // output potential
+        // self.calculate_potential(); // debug TODO; might be redundant but its ok for now
+        // self.active_io.append(
+        //     &mut complex_array_to_disk(
+        //         format!(
+        //             "{sim_data_folder}/{}/potential_{:05}",
+        //             self.parameters.sim_name, self.parameters.current_dumps
+        //         ),
+        //         &self.grid.φ,
+        //         shape,
+        //     )
+        //     .context(RuntimeError::IOError)
+        //     .unwrap(),
+        // );
 
         self.pb.set_style(
             ProgressStyle::default_bar()
                 .template("[{elapsed_precise}] {bar:20.cyan/blue} {pos:>5}/{len:5} {msg}"),
         );
+        #[cfg(feature = "expanding")]
         self.pb
             .set_message(format!("z = {}", self.get_scale_factor().recip() - 1.0));
+        #[cfg(not(feature = "expanding"))]
+        self.pb.set_message(format!("t = {}", self.parameters.time));
         self.pb.inc(1);
     }
 
     /// This function checks if simulation is done
     pub fn not_finished(&self) -> bool {
         self.parameters.time < self.parameters.final_sim_time
-            && self.parameters.tau < self.parameters.final_sim_tau
     }
 
     /// This function outputs a text file
