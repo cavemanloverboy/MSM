@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+balancer = ["mpi"]
+
 [dependencies]
 num = "0.2.1"
 ndarray = "0.15.4"
@@ -15,4 +19,10 @@ glob = "0.3.0"
 clap = { version = "3.1.12", features = ["derive"] }
 dashmap = "5.3.4"
 lazy_static = "1.4.0"
-mpi = { version = "0.6.0", path = "../../rustMPItest/", features=["derive"] }
+
+
+[dependencies.mpi]
+version = "0.6.0"
+path = "../../rustMPItest/"
+features = ["derive"]
+optional = true

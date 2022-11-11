@@ -13,14 +13,16 @@ pub struct Balancer<T> {
     handles: Handles<T>,
 }
 
+#[cfg(feature = "balancer")]
 impl<T> Balancer<T> {
 
     /// Constructs a new `Balancer` from an `mpi::SystemCommunicator` a.k.a. `world`.
-    pub fn new_from_world(world: SystemCommunicator, reduce: usize) -> Self {
+    pub fn new(world: SystemCommunicator, workers: usize) -> Self {
         
         // This is the maximum number of `JoinHandle`s allowed.
         // Set equal to available_parallelism minus reduce (user input)
-        let workers: usize = std::thread::available_parallelism().unwrap().get() - reduce;
+        // let workers: usize = std::thread::available_parallelism().unwrap().get() - tasks;
+        let workers = tasks;
 
         // This is the node id and total number of nodes
         let rank: usize = world.rank() as usize;
@@ -40,6 +42,33 @@ impl<T> Balancer<T> {
             handles: vec![],
         }
     }
+
+    // pub fn new(world: SystemCommunicator, workers: usize) -> Self {
+        
+    //     // This is the maximum number of `JoinHandle`s allowed.
+    //     // Set equal to available_parallelism minus reduce (user input)
+    //     // let workers: usize = std::thread::available_parallelism().unwrap().get() - tasks;
+    //     let workers = tasks;
+
+    //     // This is the node id and total number of nodes
+    //     let rank: usize = world.rank() as usize;
+    //     let size: usize = world.size() as usize;
+
+    //     if rank == 0 {
+    //         println!("--------- Balancer Activated ---------");
+    //         println!("            Nodes : {size}");
+    //         println!(" Workers (rank 0) : {workers} ");
+    //         println!("--------------------------------------");
+    //     } 
+    //     Balancer {
+    //         world,
+    //         workers,
+    //         rank,
+    //         size,
+    //         handles: vec![],
+    //     }
+    // }
+
 
 
     /// Calculates local set of items on which to work on.
