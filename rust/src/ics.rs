@@ -239,21 +239,22 @@ where
         + ConstGenerator<OutType = Complex<T>>,
     rand_distr::Standard: Distribution<T>,
 {
-    assert_eq!(
-        parameters.dims,
-        Dimensions::Three,
-        "Only 3-D is supported for the spherical tophat"
-    );
+    // assert_eq!(
+    //     parameters.dims,
+    //     Dimensions::Three,
+    //     "Only 3-D is supported for the spherical tophat"
+    // );
 
     // Grid spacing (uses axis length to support feature = "expanding" being on or off)
     let dx = parameters.axis_length / T::from(parameters.size).unwrap();
 
     // Construct spatial grid
+    let null = [parameters.axis_length / T::from_f64(2.0).unwrap()];
     let x: Vec<T> = (0..parameters.size)
         .map(|i| T::from_usize(2 * i + 1).unwrap() * dx / T::from_f64(2.0).unwrap())
         .collect();
-    let y = &x;
-    let z = &x;
+    let y = if [Dimensions::Three, Dimensions::Two].contains(&parameters.dims) { x.as_slice() } else { &null };
+    let z = if parameters.dims == Dimensions::Three { x.as_slice() } else { &null };
 
     let ramp = |r: T| -> T {
         T::one()
@@ -263,13 +264,13 @@ where
     };
     // Construct ψ
     let mut ψ_values = vec![];
-    for i in 0..parameters.size {
-        for j in 0..parameters.size {
-            for k in 0..parameters.size {
+    for (i, &xx) in x.iter().enumerate() {
+        for (j, &yy) in y.into_iter().enumerate() {
+            for (k, &zz) in z.into_iter().enumerate() {
                 // Calculate distance from center of box
-                let xi = x[i] - parameters.axis_length / T::from_f64(2.0).unwrap();
-                let yj = y[j] - parameters.axis_length / T::from_f64(2.0).unwrap();
-                let zk = z[k] - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let xi = xx - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let yj = yy - parameters.axis_length / T::from_f64(2.0).unwrap();
+                let zk = zz - parameters.axis_length / T::from_f64(2.0).unwrap();
                 let r = (xi * xi + yj * yj + zk * zk).sqrt();
 
                 let value = Complex::<T>::new(
