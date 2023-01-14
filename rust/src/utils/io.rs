@@ -4,16 +4,22 @@ use ndarray_npy::{write_npy, WritableElement};
 use num::{Complex, Float};
 use serde::de::DeserializeOwned;
 use serde_derive::Deserialize;
-use solana_sdk::signature::read_keypair_file;
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
 use std::time::Instant;
 
 #[cfg(feature = "remote-storage")]
 use {
-    shadow_drive_sdk::ShadowDriveClient,
-    solana_sdk::signer::keypair::Keypair,
-    std::path::PathBuf,
+    shadow_drive_sdk::{
+        models::{storage_acct::StorageAcct, ShadowFile},
+        ShadowDriveClient,
+    },
+    solana_sdk::{
+        pubkey::Pubkey,
+        signature::read_keypair_file,
+        signer::{keypair::Keypair, Signer},
+    },
+    std::{path::PathBuf, sync::RwLock},
     tokio::runtime::{Builder, Runtime},
 };
 
@@ -187,35 +193,123 @@ pub struct TomlParameters {
     #[cfg(feature = "expanding")]
     pub cosmology: CosmologyParameters,
 
-    /// Keypair to use for remote storage. NOTE: supply a path, and the deserializer will attempt to deserialize
     #[cfg(feature = "remote-storage")]
+    pub remote_storage_parameters: RemoteStorageParameters,
+}
+
+#[cfg(feature = "remote-storage")]
+#[derive(Deserialize)]
+pub struct RemoteStorageParameters {
+    /// Keypair to use for remote storage. NOTE: supply a path, and the deserializer will attempt to deserialize
     #[serde(deserialize_with = "deserialize_keypair")]
     #[serde(alias = "keypair_path")]
     pub keypair: Keypair,
+
+    /// Storage account to use
+    pub storage_account: String,
 }
 
 #[cfg(feature = "remote-storage")]
 pub(crate) struct RemoteStorage {
     /// ShadowDrive client
-    pub(crate) client: ShadowDriveClient<Keypair>,
+    pub(crate) client: Arc<ShadowDriveClient<Keypair>>,
     /// Tokio runtime
     pub(crate) rt: Runtime,
+    /// Storage Account
+    pub(crate) storage_account: Pubkey,
+    /// Storage account files
+    pub(crate) files: Arc<RwLock<Vec<String>>>,
 }
 
+#[cfg(feature = "remote-storage")]
 impl RemoteStorage {
-    pub(crate) fn new(keypair: Keypair) -> RemoteStorage {
+    pub(crate) fn new(remote_storage_parameters: RemoteStorageParameters) -> RemoteStorage {
         const SOLANA_MAINNET_BETA_ENDPOINT: &'static str = "https://api.mainnet-beta.solana.com";
+        // Get the pubkey associated with this keypair
+        let pubkey = remote_storage_parameters.keypair.pubkey();
+
+        // Initialize tokio runtime
+        let rt = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .unwrap();
+
+        // Initialize client and get storage account pubkey
+        let client = Arc::new(ShadowDriveClient::new(
+            remote_storage_parameters.keypair,
+            SOLANA_MAINNET_BETA_ENDPOINT,
+        ));
+        let storage_account: Pubkey = get_account_pubkey(
+            rt.block_on(client.get_storage_accounts(&pubkey))
+                .expect("client error")
+                .into_iter()
+                .find(|acct| get_account_name(acct) == &remote_storage_parameters.storage_account)
+                .expect("storage account doesn't exist"),
+        );
+
+        // Get files currently stores on account
+        let files = Arc::new(RwLock::new(
+            rt.block_on(client.list_objects(&pubkey))
+                .expect("failed to obtain file names in remote storage account"),
+        ));
+
         RemoteStorage {
-            client: ShadowDriveClient::new(keypair, SOLANA_MAINNET_BETA_ENDPOINT),
-            rt: Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()
-                .unwrap(),
+            client,
+            rt,
+            storage_account,
+            files,
+        }
+    }
+
+    pub(crate) fn upload_grid<T: Float + HasAfEnum + Default + serde::Serialize + std::fmt::Debug>(
+        &self,
+        grid: &Array<Complex<T>>,
+        filename: String,
+    ) -> tokio::task::JoinHandle<String>
+    where
+        Complex<T>: arrayfire::HasAfEnum + serde::Serialize,
+    {
+        // Serialize the grid
+        let bytes: Vec<u8> = bincode::serialize(&grid).unwrap();
+
+        // Upload the grid
+        let client = Arc::clone(&self.client);
+        let storage_account = self.storage_account.clone();
+        let files = Arc::clone(&self.files);
+        if files.read().unwrap().contains(&filename) {
+            return self.rt.spawn(async move {
+                // Overwrite file
+                let mut response = client
+                    .edit_file(&storage_account, ShadowFile::bytes(filename, bytes))
+                    .await
+                    .expect("failed to upload file");
+
+                // Return url
+                response.finalized_locations.remove(0)
+            });
+        } else {
+            return self.rt.spawn(async move {
+                // Upload file
+                let mut response = client
+                    .store_files(
+                        &storage_account,
+                        vec![ShadowFile::bytes(filename.clone(), bytes)],
+                    )
+                    .await
+                    .expect("failed to upload file");
+
+                // Add file to files
+                files.write().unwrap().push(filename);
+
+                // Return url
+                response.finalized_locations.remove(0)
+            });
         }
     }
 }
 
+#[cfg(feature = "remote-storage")]
 fn deserialize_keypair<'de, D>(deserializer: D) -> Result<Keypair, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -227,4 +321,20 @@ where
     };
 
     read_keypair_file(path).map_err(serde::de::Error::custom)
+}
+
+#[cfg(feature = "remote-storage")]
+fn get_account_name(acct: &StorageAcct) -> &str {
+    match acct {
+        &StorageAcct::V1(ref account) => &account.identifier,
+        &StorageAcct::V2(ref account) => &account.identifier,
+    }
+}
+
+#[cfg(feature = "remote-storage")]
+fn get_account_pubkey(acct: StorageAcct) -> Pubkey {
+    match acct {
+        StorageAcct::V1(account) => account.storage_account,
+        StorageAcct::V2(account) => account.storage_account,
+    }
 }
