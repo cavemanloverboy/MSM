@@ -21,12 +21,13 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use ndarray_npy::{ReadableElement, WritableElement};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
+use serde::Serialize;
 use std::fmt::{Display, LowerExp};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 #[cfg(feature = "expanding")]
-use cosmology::scale_factor::CosmologicalParameters;
+use crate::utils::rk4;
 
 #[cfg(feature = "remote-storage")]
 use crate::utils::io::RemoteStorage;
@@ -358,6 +359,9 @@ where
         + FloatConst
         + Send
         + Sync
+        + Default
+        + Serialize
+        + std::fmt::Debug
         + 'static,
     Complex<T>: HasAfEnum
         + FloatingPoint
@@ -368,7 +372,10 @@ where
         + HasAfEnum<UnaryOutType = Complex<T>>
         + HasAfEnum<AbsOutType = T>
         + HasAfEnum<ArgOutType = T>
-        + ConstGenerator<OutType = Complex<T>>,
+        + ConstGenerator<OutType = Complex<T>>
+        + Default
+        + Serialize
+        + std::fmt::Debug,
     rand_distr::Standard: rand_distr::Distribution<T>,
 {
     /// A constructor function which returns a `SimulationObject` from a user's toml.
@@ -529,7 +536,7 @@ where
             scale_factor_solver,
             pb,
             #[cfg(feature = "remote-storage")]
-            remote_storage: RemoteStorage::new(toml.keypair),
+            remote_storage: RemoteStorage::new(toml.remote_storage_parameters),
         };
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
@@ -711,14 +718,13 @@ where
 
         // If finished, wait for I/O to finish
         if !self.not_finished() {
-            
             // If using remote storage, get url pairs and print them
             #[cfg(feature = "remote-storage")]
             while !self.active_io.is_empty() {
                 let (real, imag) = self.remote_storage.rt.block_on(async {
                     (
-                        self.active_io.remove(0).await.expect("io failed"),
-                        self.active_io.remove(0).await.expect("io failed"),
+                        self.active_io.remove(0).await.expect("remote io failed"),
+                        self.active_io.remove(0).await.expect("remote io failed"),
                     )
                 });
                 println!("uploaded:");
@@ -922,19 +928,24 @@ where
 
         // If finished, wait for I/O to finish
         if !self.not_finished() {
-            while self.active_io.len() > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+            // If using remote storage, get url pairs and print them
+            #[cfg(feature = "remote-storage")]
+            while !self.active_io.is_empty() {
+                let (real, imag) = self.remote_storage.rt.block_on(async {
+                    (
+                        self.active_io.remove(0).await.expect("remote io failed"),
+                        self.active_io.remove(0).await.expect("remote io failed"),
+                    )
+                });
+                println!("uploaded:");
+                println!("    {real}");
+                println!("    {imag}");
+            }
 
-                // Steal all done threads from active_io
-                let done_threads = drain_filter(&mut self.active_io, |io| io.is_finished());
-
-                for io in done_threads {
-                    // println!(
-                    //     "I/O took {} millis",
-                    //     io.join().unwrap().elapsed().as_millis()
-                    // );
-                    drop(io)
-                }
+            // If using local storage, wait for io to finish
+            #[cfg(not(feature = "remote-storage"))]
+            for io in self.active_io {
+                io.join().unwrap();
             }
         }
 
@@ -1313,12 +1324,12 @@ where
 
         #[cfg(feature = "remote-storage")]
         {
-            let mut host = vec![Complex::<T>::new(T::zero(), T::zero()); self.grid.ψ.elements()];
-            self.grid.ψ.host(&mut host);
-            let (real, imag) = host
-                .into_iter()
-                .map(|z| (z.re, z.im))
-                .unzip::<(Vec<T>, Vec<T>)>();
+            // Upload to remote storage
+            let filename = format!(
+                "{}_psi_{:05}",
+                self.parameters.sim_name, self.parameters.current_dumps
+            );
+            self.remote_storage.upload_grid(&self.grid.ψ, filename);
         }
 
         self.pb.set_style(
