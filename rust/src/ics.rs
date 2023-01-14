@@ -65,7 +65,7 @@ pub fn cold_gauss<T>(
     mean: Vec<T>,
     std: Vec<T>,
     parameters: &SimulationParameters<T>,
-) -> SimulationObject<T>
+) -> SimulationGrid<T>
 where
     T: Float
         + FloatingPoint
@@ -198,7 +198,7 @@ where
     // );
     // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
 
-    SimulationObject::<T>::new_with_parameters(ψ, parameters.clone())
+    SimulationGrid::<T>::new(ψ)
 }
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -207,7 +207,7 @@ pub fn spherical_tophat<T>(
     radius: f64,
     delta: f64,
     slope: f64,
-) -> SimulationObject<T>
+) -> SimulationGrid<T>
 where
     T: Float
         + FloatingPoint
@@ -253,8 +253,16 @@ where
     let x: Vec<T> = (0..parameters.size)
         .map(|i| T::from_usize(2 * i + 1).unwrap() * dx / T::from_f64(2.0).unwrap())
         .collect();
-    let y = if [Dimensions::Three, Dimensions::Two].contains(&parameters.dims) { x.as_slice() } else { &null };
-    let z = if parameters.dims == Dimensions::Three { x.as_slice() } else { &null };
+    let y = if [Dimensions::Three, Dimensions::Two].contains(&parameters.dims) {
+        x.as_slice()
+    } else {
+        &null
+    };
+    let z = if parameters.dims == Dimensions::Three {
+        x.as_slice()
+    } else {
+        &null
+    };
 
     let ramp = |r: T| -> T {
         T::one()
@@ -310,7 +318,7 @@ where
     // );
     // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
 
-    SimulationObject::<T>::new_with_parameters(ψ, parameters.clone())
+    SimulationGrid::<T>::new(ψ)
 }
 
 pub fn spherical_tophat_quantum<T>(
@@ -353,7 +361,7 @@ where
     rand_distr::Standard: Distribution<T>,
 {
     // Get mft grid
-    let mut mft_grid = spherical_tophat(parameters, radius, delta, slope).grid;
+    let mut mft_grid = spherical_tophat(parameters, radius, delta, slope);
 
     // Add perturbations to grid
     sample_quantum_perturbation(&mut mft_grid, parameters, scheme, seed);
@@ -367,7 +375,7 @@ pub fn cold_gauss_kspace<T>(
     std: Vec<T>,
     parameters: &SimulationParameters<T>,
     seed: Option<u64>,
-) -> SimulationObject<T>
+) -> SimulationGrid<T>
 where
     T: Float
         + FloatingPoint
@@ -510,7 +518,7 @@ where
     //normalize::<T>(&mut ψ, parameters.dx, parameters.dims);
     debug_assert!(check_norm::<T>(&ψ, parameters.dx, parameters.dims));
 
-    SimulationObject::<T>::new_with_parameters(ψ, parameters.clone())
+    SimulationGrid::<T>::new(ψ)
 }
 
 pub fn cold_gauss_sample<T>(
@@ -519,7 +527,7 @@ pub fn cold_gauss_sample<T>(
     parameters: &SimulationParameters<T>,
     scheme: SamplingScheme,
     sample_seed: Option<u64>,
-) -> SimulationObject<T>
+) -> SimulationGrid<T>
 where
     T: Float
         + FloatingPoint
@@ -551,14 +559,9 @@ where
         + ConstGenerator<OutType = Complex<T>>,
     rand_distr::Standard: Distribution<T>,
 {
-    let mut simulation_object = cold_gauss::<T>(mean, std, parameters);
-    sample_quantum_perturbation::<T>(
-        &mut simulation_object.grid,
-        &simulation_object.parameters,
-        scheme,
-        sample_seed,
-    );
-    simulation_object
+    let mut simulation_grid = cold_gauss::<T>(mean, std, parameters);
+    sample_quantum_perturbation::<T>(&mut simulation_grid, parameters, scheme, sample_seed);
+    simulation_grid
 }
 
 pub fn cold_gauss_kspace_sample<T>(
@@ -568,7 +571,7 @@ pub fn cold_gauss_kspace_sample<T>(
     scheme: SamplingScheme,
     phase_seed: Option<u64>,
     sample_seed: Option<u64>,
-) -> SimulationObject<T>
+) -> SimulationGrid<T>
 where
     T: Float
         + FloatingPoint
@@ -600,14 +603,9 @@ where
         + ConstGenerator<OutType = Complex<T>>,
     rand_distr::Standard: Distribution<T>,
 {
-    let mut simulation_object = cold_gauss_kspace::<T>(mean, std, parameters, phase_seed);
-    sample_quantum_perturbation::<T>(
-        &mut simulation_object.grid,
-        &simulation_object.parameters,
-        scheme,
-        sample_seed,
-    );
-    simulation_object
+    let mut simulation_grid = cold_gauss_kspace::<T>(mean, std, parameters, phase_seed);
+    sample_quantum_perturbation::<T>(&mut simulation_grid, parameters, scheme, sample_seed);
+    simulation_grid
 }
 
 /// This function takes in some input and returns it with some noise based on given `n` and sampling method.
@@ -656,7 +654,6 @@ pub fn sample_quantum_perturbation<T>(
     let ψ = &mut grid.ψ;
 
     // Convert input field to expected count per cell
-    // TODO: Perhaps optimize mem storage by reusing ψ
     let ψ_count: Array<Complex<T>> = mul(
         ψ,
         &Complex::<T>::new(
@@ -994,16 +991,15 @@ fn test_cold_gauss_initialization() {
 
     // Create a Simulation Object using Gaussian parameters and
     // simulation parameters
-    let sim: SimulationObject<T> = cold_gauss::<T>(mean, std, &parameters);
+    let sim: SimulationGrid<T> = cold_gauss::<T>(mean, std, &parameters);
 
-    let norm_check =
-        sum_all(&mul(&sim.grid.ψ, &conjg(&sim.grid.ψ), false)).0 * sim.parameters.dx.powf(K as T);
+    let norm_check = sum_all(&mul(&sim.ψ, &conjg(&sim.ψ), false)).0 * parameters.dx.powf(K as T);
 
     //arrayfire::af_print!("ψ", slice(&sim.grid.ψ, S as i64 / 2));
     assert_abs_diff_eq!(norm_check, 1.0, epsilon = 1e-6);
     assert!(check_norm::<T>(
-        &sim.grid.ψ,
-        sim.parameters.dx,
+        &sim.ψ,
+        parameters.dx,
         num::FromPrimitive::from_usize(K).unwrap()
     ));
 }

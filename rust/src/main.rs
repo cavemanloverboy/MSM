@@ -55,6 +55,7 @@ fn main() {
             simulation_object.parameters.sim_name,
             start.elapsed().as_secs()
         );
+        println!("Simulation Parameters\n{}", simulation_object.parameters);
     }
 
     if args.toml.len() > 1 {

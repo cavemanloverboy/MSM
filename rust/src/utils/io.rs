@@ -4,9 +4,18 @@ use ndarray_npy::{write_npy, WritableElement};
 use num::{Complex, Float};
 use serde::de::DeserializeOwned;
 use serde_derive::Deserialize;
-use std::sync::{Arc, RwLock};
+use solana_sdk::signature::read_keypair_file;
+use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
 use std::time::Instant;
+
+#[cfg(feature = "remote-storage")]
+use {
+    shadow_drive_sdk::ShadowDriveClient,
+    solana_sdk::signer::keypair::Keypair,
+    std::path::PathBuf,
+    tokio::runtime::{Builder, Runtime},
+};
 
 /// This function writes an arrayfire array to disk in .npy format. It first hosts the
 pub fn complex_array_to_disk<T>(
@@ -25,7 +34,7 @@ where
     array.host(&mut host);
 
     // Atomic reference counters
-    let real_host = Arc::new(RwLock::new(host));
+    let real_host = Arc::new(host);
     let imag_host = real_host.clone();
 
     // Construct path
@@ -35,7 +44,7 @@ where
     // Spawn a thread for each of the i/o operations
     let real_handle: std::thread::JoinHandle<_> = spawn(move || {
         // Gather real values
-        let real: Vec<T> = real_host.read().unwrap().iter().map(|x| x.re).collect();
+        let real: Vec<T> = real_host.iter().map(|x| x.re).collect();
 
         // Build nd_array for npy serialization
         let real: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(real);
@@ -49,7 +58,7 @@ where
     });
     let imag_handle: std::thread::JoinHandle<_> = spawn(move || {
         // Gather imag values
-        let imag: Vec<T> = imag_host.read().unwrap().iter().map(|x| x.im).collect();
+        let imag: Vec<T> = imag_host.iter().map(|x| x.im).collect();
 
         // Build nd_array for npy serialization
         let imag: ndarray::Array1<T> = ndarray::ArrayBase::from_vec(imag);
@@ -177,4 +186,45 @@ pub struct TomlParameters {
     /// Cosmological Parameters
     #[cfg(feature = "expanding")]
     pub cosmology: CosmologyParameters,
+
+    /// Keypair to use for remote storage. NOTE: supply a path, and the deserializer will attempt to deserialize
+    #[cfg(feature = "remote-storage")]
+    #[serde(deserialize_with = "deserialize_keypair")]
+    #[serde(alias = "keypair_path")]
+    pub keypair: Keypair,
+}
+
+#[cfg(feature = "remote-storage")]
+pub(crate) struct RemoteStorage {
+    /// ShadowDrive client
+    pub(crate) client: ShadowDriveClient<Keypair>,
+    /// Tokio runtime
+    pub(crate) rt: Runtime,
+}
+
+impl RemoteStorage {
+    pub(crate) fn new(keypair: Keypair) -> RemoteStorage {
+        const SOLANA_MAINNET_BETA_ENDPOINT: &'static str = "https://api.mainnet-beta.solana.com";
+        RemoteStorage {
+            client: ShadowDriveClient::new(keypair, SOLANA_MAINNET_BETA_ENDPOINT),
+            rt: Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+                .unwrap(),
+        }
+    }
+}
+
+fn deserialize_keypair<'de, D>(deserializer: D) -> Result<Keypair, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // The user supplied a path
+    let path: PathBuf = match serde::Deserialize::deserialize(deserializer) {
+        Ok(s) => s,
+        Err(e) => return Err(e),
+    };
+
+    read_keypair_file(path).map_err(serde::de::Error::custom)
 }

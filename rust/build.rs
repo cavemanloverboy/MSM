@@ -27,11 +27,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         env::var("LD_LIBRARY_PATH").unwrap(),
         &env::var("AF_PATH").unwrap()
     );
-    println!(
-        "cargo:warning= these are the vars: {}, {}",
-        env::var("AF_PATH").unwrap(),
-        env!("LD_LIBRARY_PATH")
-    );
+    // println!(
+    //     "cargo:warning= these are the vars: {}, {}",
+    //     env::var("AF_PATH").unwrap(),
+    //     env!("LD_LIBRARY_PATH")
+    // );
 
     // Build arrayfire if necessary
     if std::path::Path::exists("./arrayfire".as_ref()) {
