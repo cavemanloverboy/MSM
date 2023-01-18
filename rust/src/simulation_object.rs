@@ -23,7 +23,6 @@ use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
 use serde::Serialize;
 use std::fmt::{Display, LowerExp};
-use std::thread::JoinHandle;
 use std::time::Instant;
 
 #[cfg(feature = "expanding")]
@@ -159,7 +158,7 @@ where
 
     /// Active io (local storage), return value is time elapsed for io
     #[cfg(not(feature = "remote-storage"))]
-    pub active_io: Vec<JoinHandle<u128>>,
+    pub active_io: Vec<std::thread::JoinHandle<u128>>,
 
     /// Active io (remote storage), return value is url where grid is hosted
     #[cfg(feature = "remote-storage")]
@@ -721,15 +720,12 @@ where
             // If using remote storage, get url pairs and print them
             #[cfg(feature = "remote-storage")]
             while !self.active_io.is_empty() {
-                let (real, imag) = self.remote_storage.rt.block_on(async {
-                    (
-                        self.active_io.remove(0).await.expect("remote io failed"),
-                        self.active_io.remove(0).await.expect("remote io failed"),
-                    )
-                });
-                println!("uploaded:");
-                println!("    {real}");
-                println!("    {imag}");
+                let grid = self
+                    .remote_storage
+                    .rt
+                    .block_on(self.active_io.remove(0).await)
+                    .expect("remote io failed");
+                println!("uploaded {grid}");
             }
 
             // If using local storage, wait for io to finish
@@ -931,15 +927,12 @@ where
             // If using remote storage, get url pairs and print them
             #[cfg(feature = "remote-storage")]
             while !self.active_io.is_empty() {
-                let (real, imag) = self.remote_storage.rt.block_on(async {
-                    (
-                        self.active_io.remove(0).await.expect("remote io failed"),
-                        self.active_io.remove(0).await.expect("remote io failed"),
-                    )
-                });
-                println!("uploaded:");
-                println!("    {real}");
-                println!("    {imag}");
+                let grid = self
+                    .remote_storage
+                    .rt
+                    .block_on(self.active_io.remove(0))
+                    .expect("remote io failed");
+                println!("uploaded {grid}");
             }
 
             // If using local storage, wait for io to finish
@@ -1276,16 +1269,12 @@ where
             }
             #[cfg(feature = "remote-storage")]
             {
-                let (real, imag) = self.remote_storage.rt.block_on(async {
-                    (
-                        self.active_io.remove(0).await.expect("io failed"),
-                        self.active_io.remove(0).await.expect("io failed"),
-                    )
-                });
-
-                println!("uploaded:");
-                println!("    {real}");
-                println!("    {imag}");
+                let grid = self
+                    .remote_storage
+                    .rt
+                    .block_on(self.active_io.remove(0))
+                    .expect("io failed");
+                println!("uploaded {grid}");
             }
         }
 
@@ -1329,7 +1318,8 @@ where
                 "{}_psi_{:05}",
                 self.parameters.sim_name, self.parameters.current_dumps
             );
-            self.remote_storage.upload_grid(&self.grid.ψ, filename);
+            let active_io = self.remote_storage.upload_grid(&self.grid.ψ, filename);
+            self.active_io.push(active_io);
         }
 
         self.pb.set_style(

@@ -250,7 +250,7 @@ impl RemoteStorage {
 
         // Get files currently stores on account
         let files = Arc::new(RwLock::new(
-            rt.block_on(client.list_objects(&pubkey))
+            rt.block_on(client.list_objects(&storage_account))
                 .expect("failed to obtain file names in remote storage account"),
         ));
 
