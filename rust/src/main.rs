@@ -15,6 +15,8 @@ pub struct CommandLineArguments {
     toml: String,
     #[clap(long, short)]
     verbose: bool,
+    #[clap(long)]
+    test: bool,
 }
 fn main() -> Result<(), Box<dyn Error>> {
     // Set to gpu if available
@@ -35,6 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // If seeds are being used, generate individual tomls for every stream
     let toml: TomlParameters = read_toml(&args.toml)?;
     let streams: Vec<SimulationParameters<_>> = parameters_from_toml(toml)?;
+    let multi_stream: bool = streams.len() > 1;
 
     // Given a set of tomls, define simulation objects and run sims
     for stream in streams {
@@ -49,25 +52,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Simulation Parameters\n{}", simulation_object.parameters);
         println!("Physical Constants\nHBAR = {HBAR:.5e}\nPOIS_CONSTANT = {POIS_CONST:.5e}");
 
-        // Dump initial condition
-        simulation_object.dump();
+        if !args.test {
+            // Dump initial condition
+            simulation_object.dump();
 
-        // Main evolve loop
-        let start = Instant::now();
-        while simulation_object.not_finished() {
-            simulation_object
-                .update(args.verbose)
-                .expect("failed to update");
+            // Main evolve loop
+            let start = Instant::now();
+            while simulation_object.not_finished() {
+                simulation_object
+                    .update(args.verbose)
+                    .expect("failed to update");
+            }
+            println!(
+                "Finished {} in {} seconds",
+                simulation_object.parameters.sim_name,
+                start.elapsed().as_secs()
+            );
+            println!("Simulation Parameters\n{}", simulation_object.parameters);
         }
-        println!(
-            "Finished {} in {} seconds",
-            simulation_object.parameters.sim_name,
-            start.elapsed().as_secs()
-        );
-        println!("Simulation Parameters\n{}", simulation_object.parameters);
     }
 
-    if args.toml.len() > 1 {
+    if multi_stream {
         println!(
             "Finished all simulations in {} seconds",
             now.elapsed().as_secs()

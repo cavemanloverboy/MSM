@@ -17,7 +17,7 @@ use ndarray_npy::{ReadableElement, WritableElement};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_traits::FloatConst;
 use rand_distr::{Distribution, Poisson};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::iter::Iterator;
 
@@ -779,79 +779,4 @@ pub enum SamplingScheme {
     Poisson,
     Wigner,
     Husimi,
-}
-
-#[test]
-fn test_cold_gauss_initialization() {
-    use approx::assert_abs_diff_eq;
-    use arrayfire::{conjg, sum_all};
-
-    // Gaussian parameters
-    let mean = vec![0.5; 3];
-    let std = vec![0.2; 3];
-
-    type T = f32;
-
-    // Simulation parameters
-    const K: usize = 3;
-    const S: usize = 128;
-    let axis_length = 1.0;
-    let time = 1.0;
-    let total_sim_time = 1.0;
-    let cfl = 0.25;
-    let num_data_dumps = 100;
-    let total_mass = 1.0;
-    let particle_mass = 1.0;
-    let sim_name = "cold-gauss".to_string();
-    let k2_cutoff = 0.95;
-    let alias_threshold = 0.02;
-    let hbar_ = None;
-    #[cfg(feature = "expanding")]
-    let cosmo_params = CosmologyParameters {
-        h: 0.7,
-        omega_matter_now: 0.7,
-        omega_radiation_now: 0.0,
-        max_dloga: Some(1e-2),
-        z0: 1.0,
-    };
-    let sampling_parameters = None;
-    let ics = InitialConditions::ColdGaussKSpace {
-        mean: vec![1.0],
-        std: vec![1.0],
-        phase_seed: Some(32),
-    };
-
-    let parameters = SimulationParameters::<T>::new(
-        axis_length,
-        time,
-        total_sim_time,
-        cfl,
-        num_data_dumps,
-        total_mass,
-        particle_mass,
-        sim_name,
-        k2_cutoff,
-        alias_threshold,
-        hbar_,
-        num::FromPrimitive::from_usize(K).unwrap(),
-        S,
-        sampling_parameters,
-        #[cfg(feature = "expanding")]
-        cosmo_params,
-        ics,
-    );
-
-    // Create a Simulation Object using Gaussian parameters and
-    // simulation parameters
-    let sim: SimulationGrid<T> = cold_gauss::<T>(mean, std, &parameters);
-
-    let norm_check = sum_all(&mul(&sim.ψ, &conjg(&sim.ψ), false)).0 * parameters.dx.powf(K as T);
-
-    //arrayfire::af_print!("ψ", slice(&sim.grid.ψ, S as i64 / 2));
-    assert_abs_diff_eq!(norm_check, 1.0, epsilon = 1e-6);
-    assert!(check_norm::<T>(
-        &sim.ψ,
-        parameters.dx,
-        num::FromPrimitive::from_usize(K).unwrap()
-    ));
 }

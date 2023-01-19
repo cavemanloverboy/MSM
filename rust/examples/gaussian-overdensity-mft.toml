@@ -11,4 +11,7 @@ alias_threshold             = 0.02
 dims                        = 3
 size                        = 512
 
-ics                         = { ColdGaussMFT = { mean = [15, 15, 15], std = [10, 10, 10] } } #, scheme = "Husimi", sample_seed = 0 } }
+[ics]                         
+type = "ColdGauss"
+mean = [15, 15, 15]
+std = [10, 10, 10]

@@ -1,12 +1,11 @@
 use approx::assert_abs_diff_eq;
 use arrayfire::{
-    conjg, isinf, isnan, mul, real, sum_all, Array, ComplexFloating, ConstGenerator, FloatingPoint,
-    Fromf64, HasAfEnum,
+    conjg, isinf, isnan, mul, real, sum_all, Array, ComplexFloating, FloatingPoint, Fromf64,
+    HasAfEnum,
 };
-use ndarray_npy::{ReadableElement, WritableElement};
 use num::{Complex, Float, FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 pub fn normalize<T>(grid: &mut Array<Complex<T>>, dx: T, dims: Dimensions)

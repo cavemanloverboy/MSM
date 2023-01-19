@@ -9,8 +9,14 @@ sim_name                    = "spherical-tophat"
 k2_cutoff                   = 0.95
 alias_threshold             = 0.02
 dims                        = 3
-size                        = 64
+size                        = 32
 
-ics                         = { SphericalTophat = { radius = 5.0, slope = 50, delta = 100 } }
+[ics]                         
+type = "SphericalTophat"
+radius = 5.0
+slope = 50
+delta = 100
 
-
+[sampling]
+seeds = "1 to 10"
+scheme = "Husimi"

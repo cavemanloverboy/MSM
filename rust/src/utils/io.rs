@@ -5,7 +5,6 @@ use num::{Complex, Float, FromPrimitive};
 use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_derive::Deserialize;
 use std::fmt::Display;
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
@@ -307,6 +306,8 @@ pub fn parameters_from_toml<
                     toml.cosmology,
                     Some(SamplingParameters { seed, scheme }),
                     toml.ics.clone(),
+                    #[cfg(feature = "remote-storage")]
+                    RemoteStorage::new(toml.remote_storage_parameters.clone()),
                 )
             })
             .collect())
@@ -330,6 +331,8 @@ pub fn parameters_from_toml<
             toml.cosmology,
             None,
             toml.ics,
+            #[cfg(feature = "remote-storage")]
+            RemoteStorage::new(toml.remote_storage_parameters),
         )])
     }
 }
@@ -515,7 +518,17 @@ pub struct RemoteStorageParameters {
 }
 
 #[cfg(feature = "remote-storage")]
-pub(crate) struct RemoteStorage {
+impl Clone for RemoteStorageParameters {
+    fn clone(&self) -> Self {
+        RemoteStorageParameters {
+            keypair: Keypair::from_bytes(self.keypair.to_bytes().as_ref()).unwrap(),
+            storage_account: self.storage_account.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "remote-storage")]
+pub struct RemoteStorage {
     /// ShadowDrive client
     pub(crate) client: Arc<ShadowDriveClient<Keypair>>,
     /// Tokio runtime

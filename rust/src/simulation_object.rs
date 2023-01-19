@@ -128,6 +128,9 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
 
     #[cfg(feature = "expanding")]
     pub cosmo_params: CosmologyParameters,
+
+    #[cfg(feature = "remote-storage")]
+    pub remote_storage: RemoteStorage,
 }
 
 /// In the original python implementation, this was a `sim` or `SimObject` object.
@@ -172,9 +175,6 @@ where
 
     #[cfg(feature = "expanding")]
     scale_factor_solver: ScaleFactorSolver,
-
-    #[cfg(feature = "remote-storage")]
-    remote_storage: RemoteStorage,
 }
 
 impl<T> SimulationGrid<T>
@@ -231,6 +231,7 @@ where
         #[cfg(feature = "expanding")] cosmo_params: CosmologyParameters,
         sampling_parameters: Option<SamplingParameters>,
         ics: InitialConditions,
+        #[cfg(feature = "remote-storage")] remote_storage: RemoteStorage,
     ) -> Self {
         let hbar_: T = T::from_f64(hbar_.unwrap_or(HBAR / particle_mass)).unwrap();
 
@@ -300,6 +301,8 @@ where
             tau,
             #[cfg(feature = "expanding")]
             final_sim_tau,
+            #[cfg(feature = "remote-storage")]
+            remote_storage,
         }
     }
 
@@ -434,8 +437,6 @@ where
             #[cfg(feature = "expanding")]
             scale_factor_solver,
             pb,
-            #[cfg(feature = "remote-storage")]
-            remote_storage: RemoteStorage::new(toml.remote_storage_parameters),
         };
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
@@ -621,9 +622,10 @@ where
             #[cfg(feature = "remote-storage")]
             while !self.active_io.is_empty() {
                 let grid = self
+                    .parameters
                     .remote_storage
                     .rt
-                    .block_on(self.active_io.remove(0).await)
+                    .block_on(self.active_io.remove(0))
                     .expect("remote io failed");
                 println!("uploaded {grid}");
             }
@@ -828,6 +830,7 @@ where
             #[cfg(feature = "remote-storage")]
             while !self.active_io.is_empty() {
                 let grid = self
+                    .parameters
                     .remote_storage
                     .rt
                     .block_on(self.active_io.remove(0))
@@ -1146,11 +1149,11 @@ where
     /// This function writes out the wavefunction and metadata to disk
     pub fn dump(&mut self) {
         // Create directory if necessary
-        // let sim_data_folder = "/scratch/groups/tabel/pizza/sim_data";
-        let sim_data_folder = "sim_data";
+        #[cfg(not(feature = "remote-storage"))]
+        const SIM_DATA_FOLDER: &'static str = "sim_data";
 
         #[cfg(not(feature = "remote-storage"))]
-        std::fs::create_dir_all(format!("{sim_data_folder}/{}/", self.parameters.sim_name))
+        std::fs::create_dir_all(format!("{SIM_DATA_FOLDER}/{}/", self.parameters.sim_name))
             .expect("failed to make directory");
 
         // Check to see which are active
@@ -1171,6 +1174,7 @@ where
             #[cfg(feature = "remote-storage")]
             {
                 let grid = self
+                    .parameters
                     .remote_storage
                     .rt
                     .block_on(self.active_io.remove(0))
@@ -1186,7 +1190,7 @@ where
             self.active_io.append(
                 &mut complex_array_to_disk(
                     format!(
-                        "{sim_data_folder}/{}/psi_{:05}",
+                        "{SIM_DATA_FOLDER}/{}/psi_{:05}",
                         self.parameters.sim_name, self.parameters.current_dumps
                     ),
                     &self.grid.ψ,
@@ -1201,7 +1205,7 @@ where
             // self.active_io.append(
             //     &mut complex_array_to_disk(
             //         format!(
-            //             "{sim_data_folder}/{}/potential_{:05}",
+            //             "{SIM_DATA_FOLDER}/{}/potential_{:05}",
             //             self.parameters.sim_name, self.parameters.current_dumps
             //         ),
             //         &self.grid.φ,
@@ -1219,7 +1223,10 @@ where
                 "{}_psi_{:05}",
                 self.parameters.sim_name, self.parameters.current_dumps
             );
-            let active_io = self.remote_storage.upload_grid(&self.grid.ψ, filename);
+            let active_io = self
+                .parameters
+                .remote_storage
+                .upload_grid(&self.grid.ψ, filename);
             self.active_io.push(active_io);
         }
 
@@ -1404,10 +1411,8 @@ where
 #[test]
 fn test_new_grid() {
     use arrayfire::Dim4;
-    //use arrayfire::af_print;
 
     // Grid parameters
-    const K: usize = 1;
     const S: usize = 32;
 
     // Random wavefunction
@@ -1417,8 +1422,6 @@ fn test_new_grid() {
 
     // Initialize grid
     let _grid: SimulationGrid<f32> = SimulationGrid::<f32>::new(ψ);
-    //af_print!("ψ", grid.ψ);
-    //af_print!("ψk", grid.ψk);
 }
 
 #[cfg(feature = "expanding")]
