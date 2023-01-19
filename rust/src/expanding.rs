@@ -116,7 +116,6 @@ impl ScaleFactorSolver {
     }
 }
 
-#[cfg(not(feature = "fake_expanding_solver"))]
 impl ScaleFactorSolver {
     /// Steps forward by `dt` and returns the value of the scale factor.
     pub(crate) fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
@@ -133,28 +132,6 @@ impl ScaleFactorSolver {
 
     pub(crate) fn get_dadt(&self) -> f64 {
         self.solver.get_dadt()
-    }
-
-    pub(crate) fn get_time(&self) -> f64 {
-        self.solver.get_time()
-    }
-}
-
-/// Placeholder with scale_factor = 1 for all time.
-#[cfg(feature = "fake_expanding_solver")]
-impl ScaleFactorSolver {
-    /// Steps forward by `dt` and returns the value of the scale factor.
-    pub(crate) fn step<T: Float + ToPrimitive + FromPrimitive>(&mut self, dt: T) -> T {
-        self.solver.step_forward(dt.to_f64().unwrap());
-        T::one()
-    }
-
-    pub(crate) fn get_a(&self) -> f64 {
-        1.0
-    }
-
-    pub(crate) fn get_dadt(&self) -> f64 {
-        0.0
     }
 
     pub(crate) fn get_time(&self) -> f64 {

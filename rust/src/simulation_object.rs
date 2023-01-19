@@ -60,7 +60,6 @@ where
 }
 
 /// This `Parameters` struct stores simulations parameters
-#[derive(Clone)]
 pub struct SimulationParameters<T: Float + FloatingPoint> {
     // Grid Parameters
     /// Physical length of each axis (if expanding, this is the initial length)
@@ -122,6 +121,10 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     pub sim_wall_time: u128,
     /// Number of timesteps taken
     pub n_steps: u64,
+    /// Quantum distribution sampling parameters
+    pub sampling_parameters: Option<SamplingParameters>,
+    /// Initial conditions
+    pub ics: InitialConditions,
 
     #[cfg(feature = "expanding")]
     pub cosmo_params: CosmologyParameters,
@@ -226,6 +229,8 @@ where
         dims: Dimensions,
         size: usize,
         #[cfg(feature = "expanding")] cosmo_params: CosmologyParameters,
+        sampling_parameters: Option<SamplingParameters>,
+        ics: InitialConditions,
     ) -> Self {
         let hbar_: T = T::from_f64(hbar_.unwrap_or(HBAR / particle_mass)).unwrap();
 
@@ -285,6 +290,8 @@ where
             size,
             dims,
             n_steps,
+            sampling_parameters,
+            ics,
             #[cfg(feature = "expanding")]
             comoving_boxsize,
             #[cfg(feature = "expanding")]
@@ -378,153 +385,46 @@ where
     rand_distr::Standard: rand_distr::Distribution<T>,
 {
     /// A constructor function which returns a `SimulationObject` from a user's toml.
-    pub fn new_from_toml(path: &str) -> Self {
-        // Read in simulations parameters from user's toml
-        let toml: TomlParameters = read_toml(path);
-
-        // Extract required parameters from toml
-        let axis_length: T = T::from_f64(toml.axis_length).unwrap();
-        let time: T = T::from_f64(toml.time.unwrap_or(0.0)).unwrap();
-        #[allow(unused_assignments)]
-        let final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
-        let cfl: T = T::from_f64(toml.cfl).unwrap();
-        let num_data_dumps: u32 = toml.num_data_dumps;
-        let total_mass: f64 = toml.total_mass;
-        let sim_name: String = toml.sim_name;
-        let k2_cutoff: f64 = toml.k2_cutoff;
-        let alias_threshold: f64 = toml.alias_threshold;
-        let dims = num::FromPrimitive::from_usize(toml.dims).unwrap();
-        let size = toml.size;
-
-        // Calculate overdetermined parameters
-        let particle_mass;
-        let hbar_;
-        if let Some(ntot) = toml.ntot {
-            // User has specified the total mass and ntot.
-            // So, the particle mass can be derived.
-
-            particle_mass = toml.total_mass / ntot;
-            hbar_ = toml.hbar_.unwrap_or_else(|| {
-                println!("hbar_ not specified, using HBAR / particle_mass.");
-                HBAR / particle_mass
-            });
-        } else if let Some(p_mass) = toml.particle_mass {
-            // User has specified the total mass and particle mass.
-            // So, the ntot can be derived, as can hbar_ if not specified.
-
-            particle_mass = p_mass;
-            hbar_ = toml.hbar_.unwrap_or_else(|| {
-                println!("hbar_ not specified, using HBAR / particle_mass.");
-                HBAR / particle_mass
-            });
-        } else if let Some(hbar_tilde) = toml.hbar_ {
-            // User has specified the total mass and hbar_.
-            // So, the ntot and particle_mass can be derived.
-
-            hbar_ = hbar_tilde;
-            particle_mass = HBAR / hbar_
-            // ntot isn't actually stored but is determined via total_mass / particle_mass;
-        } else {
-            panic!(
-                "You must specify the total mass and either exactly one of ntot (total number \
-                 of particles) or particle_mass, or hbar_tilde ( hbar / particle_mass ). Note: you
-                 can specify hbar_tilde in addition to one of the first two if you'd like to change
-                 the value of planck's constant itself."
-            )
-        }
-
-        // Construct `SimulationParameters`
-        let mut parameters = SimulationParameters::<T>::new(
-            axis_length,
-            time,
-            final_sim_time,
-            cfl,
-            num_data_dumps,
-            total_mass,
-            particle_mass,
-            sim_name,
-            k2_cutoff,
-            alias_threshold,
-            Some(hbar_),
-            dims,
-            size,
-            #[cfg(feature = "expanding")]
-            toml.cosmology,
-        );
-
+    pub fn new_from_params(mut parameters: SimulationParameters<T>) -> Result<Self, RuntimeError> {
         // Construct wavefunction
-        let grid: SimulationGrid<T> = match toml.ics {
+        let mut grid: SimulationGrid<T> = match &parameters.ics {
             // User-specified Initial Conditions
             InitialConditions::UserSpecified { path } => {
-                SimulationGrid::<T>::new(user_specified_ics(path, &mut parameters))
+                SimulationGrid::<T>::new(user_specified_ics(path, &parameters))
             }
 
             // Real space gaussian
-            InitialConditions::ColdGaussMFT { mean, std } => {
+            InitialConditions::ColdGauss { mean, std } => {
                 cold_gauss::<T>(mean.into_t(), std.into_t(), &parameters)
             }
-            InitialConditions::ColdGaussMSM {
-                mean,
-                std,
-                scheme,
-                sample_seed,
-            } => cold_gauss_sample::<T>(
-                mean.into_t(),
-                std.into_t(),
-                &parameters,
-                scheme,
-                sample_seed,
-            ),
 
-            // Momentum space gaussian
-            InitialConditions::ColdGaussKSpaceMFT {
+            // Momentum space gaussian with random phases
+            InitialConditions::ColdGaussKSpace {
                 mean,
                 std,
                 phase_seed,
-            } => cold_gauss_kspace::<T>(mean.into_t(), std.into_t(), &parameters, phase_seed),
-            InitialConditions::ColdGaussKSpaceMSM {
-                mean,
-                std,
-                scheme,
-                phase_seed,
-                sample_seed,
-            } => cold_gauss_kspace_sample::<T>(
-                mean.into_t(),
-                std.into_t(),
-                &parameters,
-                scheme,
-                phase_seed,
-                sample_seed,
-            ),
+            } => cold_gauss_kspace::<T>(mean.into_t(), std.into_t(), &parameters, *phase_seed),
 
             // Spherical Tophat
-            InitialConditions::SphericalTophat {
+            &InitialConditions::SphericalTophat {
                 radius,
                 delta,
                 slope,
             } => spherical_tophat::<T>(&parameters, radius, delta, slope),
-
-            // Spherical Tophat (Quantum)
-            InitialConditions::SphericalTophatMSM {
-                radius,
-                delta,
-                slope,
-                scheme,
-                sample_seed,
-            } => spherical_tophat_quantum::<T>(
-                &parameters,
-                radius,
-                delta,
-                slope,
-                scheme,
-                sample_seed,
-            ),
         };
+
+        // Apply quantum perturbations if specified
+        if let Some(ref sampling_parameters) = &parameters.sampling_parameters {
+            sample_quantum_perturbation(&mut grid, &parameters, sampling_parameters);
+        }
 
         #[cfg(feature = "expanding")]
         let scale_factor_solver = ScaleFactorSolver::new(toml.cosmology);
 
-        let pb = ProgressBar::with_draw_target(num_data_dumps as u64, ProgressDrawTarget::stdout());
+        let pb = ProgressBar::with_draw_target(
+            parameters.num_data_dumps as u64,
+            ProgressDrawTarget::stdout(),
+        );
 
         // Pack grid and parameters into `Simulation Object`
         let sim_obj = SimulationObject {
@@ -540,15 +440,15 @@ where
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
             sim_obj.parameters.dx,
-            dims
+            sim_obj.parameters.dims
         ));
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψk,
             sim_obj.parameters.dk,
-            dims
+            sim_obj.parameters.dims
         ));
 
-        sim_obj
+        Ok(sim_obj)
     }
 
     /// This function updates the `SimulationGrid` stored in the `SimulationObject`.
@@ -730,8 +630,8 @@ where
 
             // If using local storage, wait for io to finish
             #[cfg(not(feature = "remote-storage"))]
-            for io in self.active_io {
-                io.join().unwrap();
+            while !self.active_io.is_empty() {
+                self.active_io.remove(0).join().unwrap();
             }
         }
 
@@ -1249,6 +1149,7 @@ where
         // let sim_data_folder = "/scratch/groups/tabel/pizza/sim_data";
         let sim_data_folder = "sim_data";
 
+        #[cfg(not(feature = "remote-storage"))]
         std::fs::create_dir_all(format!("{sim_data_folder}/{}/", self.parameters.sim_name))
             .expect("failed to make directory");
 
@@ -1518,77 +1419,6 @@ fn test_new_grid() {
     let _grid: SimulationGrid<f32> = SimulationGrid::<f32>::new(ψ);
     //af_print!("ψ", grid.ψ);
     //af_print!("ψk", grid.ψk);
-}
-
-#[test]
-fn test_new_sim_parameters() {
-    type T = f64;
-    let dims = Dimensions::One;
-    let size = 16;
-
-    let axis_length: T = 1.0;
-    let time: T = 0.0;
-    let final_sim_time: T = 1.0;
-    let cfl: T = 0.25;
-    let num_data_dumps: u32 = 100;
-    let total_mass: T = 1.0;
-    let particle_mass: T = 1e-12;
-    let sim_name: String = "my-sim".to_string();
-    let k2_cutoff: f64 = 0.95;
-    let alias_threshold: f64 = 0.02;
-    let hbar_ = None;
-    #[cfg(feature = "expanding")]
-    let cosmo_params = CosmologyParameters {
-        h: 0.7,
-        omega_matter_now: 0.3,
-        omega_radiation_now: 0.0,
-        z0: 1.0,
-        max_dloga: Some(1e-2),
-    };
-
-    let params = SimulationParameters::<T>::new(
-        axis_length,
-        time,
-        final_sim_time,
-        cfl,
-        num_data_dumps,
-        total_mass,
-        particle_mass,
-        sim_name,
-        k2_cutoff,
-        alias_threshold,
-        hbar_,
-        dims,
-        size,
-        #[cfg(feature = "expanding")]
-        cosmo_params,
-    );
-    println!("{}", params);
-}
-
-#[test]
-fn test_lt_gt() {
-    type T = f32;
-    const S: usize = 16;
-    let values1: [T; S] = [5.0; S];
-    let values2: [T; S] = [4.0; S];
-
-    let mut array1 = arrayfire::Array::new(&values1, Dim4::new(&[S as u64, 1, 1, 1]));
-    let array2 = arrayfire::Array::new(&values2, Dim4::new(&[S as u64, 1, 1, 1]));
-
-    let is_under = arrayfire::lt(&array1.clone(), &array2, false);
-
-    replace_scalar::<T>(
-        // Array to replace
-        &mut array1,
-        // Condition to check for
-        &is_under,
-        // Value to replace with if true
-        1e2,
-    );
-
-    println!("gt sum is {}", arrayfire::sum_all(&array1).0);
-    println!("lt sum is {}", arrayfire::sum_all(&array1).0);
 }
 
 #[cfg(feature = "expanding")]

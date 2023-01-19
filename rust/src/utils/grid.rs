@@ -279,34 +279,14 @@ pub enum Dimensions {
     Three = 3,
 }
 
+/// This is used to make the parsing of elements when reading ICs much cleaner
 pub trait IntoT<T> {
     fn into_t(self) -> Vec<T>;
 }
 
 impl<T> IntoT<T> for &[f64]
 where
-    T: Float
-        + FloatingPoint
-        + Display
-        + ToPrimitive
-        + FromPrimitive
-        + ConstGenerator<OutType = T>
-        + HasAfEnum<InType = T>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<AggregateOutType = T>
-        + HasAfEnum<BaseType = T>
-        + Fromf64
-        + WritableElement
-        + ReadableElement
-        + std::fmt::LowerExp,
-    Complex<T>: HasAfEnum
-        + FloatingPoint
-        + ComplexFloating
-        + HasAfEnum<AggregateOutType = Complex<T>>
-        + HasAfEnum<BaseType = T>
-        + HasAfEnum<ComplexOutType = Complex<T>>
-        + HasAfEnum<UnaryOutType = Complex<T>>
-        + HasAfEnum<AbsOutType = T>,
+    T: FromPrimitive,
 {
     fn into_t(self) -> Vec<T> {
         self.iter().map(|&x| T::from_f64(x).unwrap()).collect()
@@ -315,5 +295,5 @@ where
 
 #[test]
 fn dimension_enum() {
-    let x: u8 = Dimensions::One as u8;
+    let _x: u8 = Dimensions::One as u8;
 }

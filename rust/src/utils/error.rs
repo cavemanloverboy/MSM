@@ -14,6 +14,12 @@ pub enum RuntimeError {
         k2_cutoff: f32,
         p_mass: f32,
     },
+
+    #[error("Unable to load toml: {path}")]
+    TomlReadError { path: String },
+
+    #[error("Unable to parse toml: {msg}")]
+    TomlParseError { msg: String },
 }
 
 #[macro_export]

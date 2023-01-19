@@ -21,43 +21,24 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::iter::Iterator;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type")]
 pub enum InitialConditions {
     /// Loads user specified initial conditions
     UserSpecified { path: String },
+
     /// A real (phases = 0) gaussian in real space
-    ColdGaussMFT { mean: Vec<f64>, std: Vec<f64> },
-    /// A field sampled from some quantum distribution of a real (phases = 0) gaussian in real space
-    ColdGaussMSM {
-        mean: Vec<f64>,
-        std: Vec<f64>,
-        scheme: SamplingScheme,
-        sample_seed: Option<u64>,
-    },
-    /// A real (phases = 0) gaussian in fourier space
-    ColdGaussKSpaceMFT {
+    ColdGauss { mean: Vec<f64>, std: Vec<f64> },
+
+    /// A gaussian in fourier space with uniform random phases determined by `phase_seed`.
+    ColdGaussKSpace {
         mean: Vec<f64>,
         std: Vec<f64>,
         phase_seed: Option<u64>,
     },
-    /// A field sampled from some quantum distribution of a real (phases = 0) gaussian in fourier space
-    ColdGaussKSpaceMSM {
-        mean: Vec<f64>,
-        std: Vec<f64>,
-        scheme: SamplingScheme,
-        phase_seed: Option<u64>,
-        sample_seed: Option<u64>,
-    },
+
     /// A spherical tophat in real space
     SphericalTophat { radius: f64, delta: f64, slope: f64 },
-    /// A field sampled from some quantum distribution of a tophat in real space
-    SphericalTophatMSM {
-        radius: f64,
-        delta: f64,
-        slope: f64,
-        scheme: SamplingScheme,
-        sample_seed: Option<u64>,
-    },
 }
 
 /// This function produces initial conditions corresonding to a cold initial gaussian in sp
@@ -239,12 +220,6 @@ where
         + ConstGenerator<OutType = Complex<T>>,
     rand_distr::Standard: Distribution<T>,
 {
-    // assert_eq!(
-    //     parameters.dims,
-    //     Dimensions::Three,
-    //     "Only 3-D is supported for the spherical tophat"
-    // );
-
     // Grid spacing (uses axis length to support feature = "expanding" being on or off)
     let dx = parameters.axis_length / T::from(parameters.size).unwrap();
 
@@ -272,9 +247,9 @@ where
     };
     // Construct ψ
     let mut ψ_values = vec![];
-    for (i, &xx) in x.iter().enumerate() {
-        for (j, &yy) in y.into_iter().enumerate() {
-            for (k, &zz) in z.into_iter().enumerate() {
+    for &xx in x.iter() {
+        for &yy in y.into_iter() {
+            for &zz in z.into_iter() {
                 // Calculate distance from center of box
                 let xi = xx - parameters.axis_length / T::from_f64(2.0).unwrap();
                 let yj = yy - parameters.axis_length / T::from_f64(2.0).unwrap();
@@ -293,12 +268,16 @@ where
     // Construct ψ
     let mut ψ = Array::new(
         &ψ_values,
-        Dim4::new(&[
-            parameters.size as u64,
-            parameters.size as u64,
-            parameters.size as u64,
-            1,
-        ]),
+        match parameters.dims {
+            Dimensions::One => Dim4::new(&[parameters.size as u64, 1, 1, 1]),
+            Dimensions::Two => Dim4::new(&[parameters.size as u64, parameters.size as u64, 1, 1]),
+            Dimensions::Three => Dim4::new(&[
+                parameters.size as u64,
+                parameters.size as u64,
+                parameters.size as u64,
+                1,
+            ]),
+        },
     );
     normalize::<T>(&mut ψ, parameters.dx, parameters.dims);
     debug_assert!(check_norm::<T>(&ψ, parameters.dx, parameters.dims));
@@ -319,55 +298,6 @@ where
     // crate::utils::io::complex_array_to_disk("drift_ics", "", &ψ, [parameters.size as u64, parameters.size as u64, parameters.size as u64, 1]);
 
     SimulationGrid::<T>::new(ψ)
-}
-
-pub fn spherical_tophat_quantum<T>(
-    parameters: &SimulationParameters<T>,
-    radius: f64,
-    delta: f64,
-    slope: f64,
-    scheme: SamplingScheme,
-    seed: Option<u64>,
-) -> SimulationGrid<T>
-where
-    T: Float
-        + FloatingPoint
-        + FromPrimitive
-        + Display
-        + Fromf64
-        + ConstGenerator<OutType = T>
-        + HasAfEnum<AggregateOutType = T>
-        + HasAfEnum<InType = T>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + Fromf64
-        + WritableElement
-        + ReadableElement
-        + std::fmt::LowerExp
-        + FloatConst
-        + Send
-        + Sync
-        + 'static,
-    Complex<T>: HasAfEnum
-        + ComplexFloating
-        + FloatingPoint
-        + HasAfEnum<ComplexOutType = Complex<T>>
-        + HasAfEnum<UnaryOutType = Complex<T>>
-        + HasAfEnum<AggregateOutType = Complex<T>>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + HasAfEnum<ArgOutType = T>
-        + ConstGenerator<OutType = Complex<T>>,
-    rand_distr::Standard: Distribution<T>,
-{
-    // Get mft grid
-    let mut mft_grid = spherical_tophat(parameters, radius, delta, slope);
-
-    // Add perturbations to grid
-    sample_quantum_perturbation(&mut mft_grid, parameters, scheme, seed);
-
-    // Return mft grid with perturbations
-    mft_grid
 }
 
 pub fn cold_gauss_kspace<T>(
@@ -521,99 +451,11 @@ where
     SimulationGrid::<T>::new(ψ)
 }
 
-pub fn cold_gauss_sample<T>(
-    mean: Vec<T>,
-    std: Vec<T>,
-    parameters: &SimulationParameters<T>,
-    scheme: SamplingScheme,
-    sample_seed: Option<u64>,
-) -> SimulationGrid<T>
-where
-    T: Float
-        + FloatingPoint
-        + FromPrimitive
-        + Display
-        + Fromf64
-        + ConstGenerator<OutType = T>
-        + HasAfEnum<AggregateOutType = T>
-        + HasAfEnum<InType = T>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + Fromf64
-        + WritableElement
-        + ReadableElement
-        + FloatConst
-        + std::fmt::LowerExp
-        + Send
-        + Sync
-        + 'static,
-    Complex<T>: HasAfEnum
-        + ComplexFloating
-        + FloatingPoint
-        + HasAfEnum<ComplexOutType = Complex<T>>
-        + HasAfEnum<UnaryOutType = Complex<T>>
-        + HasAfEnum<AggregateOutType = Complex<T>>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + HasAfEnum<ArgOutType = T>
-        + ConstGenerator<OutType = Complex<T>>,
-    rand_distr::Standard: Distribution<T>,
-{
-    let mut simulation_grid = cold_gauss::<T>(mean, std, parameters);
-    sample_quantum_perturbation::<T>(&mut simulation_grid, parameters, scheme, sample_seed);
-    simulation_grid
-}
-
-pub fn cold_gauss_kspace_sample<T>(
-    mean: Vec<T>,
-    std: Vec<T>,
-    parameters: &SimulationParameters<T>,
-    scheme: SamplingScheme,
-    phase_seed: Option<u64>,
-    sample_seed: Option<u64>,
-) -> SimulationGrid<T>
-where
-    T: Float
-        + FloatingPoint
-        + FromPrimitive
-        + Display
-        + Fromf64
-        + ConstGenerator<OutType = T>
-        + HasAfEnum<AggregateOutType = T>
-        + HasAfEnum<InType = T>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + Fromf64
-        + WritableElement
-        + ReadableElement
-        + FloatConst
-        + std::fmt::LowerExp
-        + Send
-        + Sync
-        + 'static,
-    Complex<T>: HasAfEnum
-        + ComplexFloating
-        + FloatingPoint
-        + HasAfEnum<ComplexOutType = Complex<T>>
-        + HasAfEnum<UnaryOutType = Complex<T>>
-        + HasAfEnum<AggregateOutType = Complex<T>>
-        + HasAfEnum<AbsOutType = T>
-        + HasAfEnum<BaseType = T>
-        + HasAfEnum<ArgOutType = T>
-        + ConstGenerator<OutType = Complex<T>>,
-    rand_distr::Standard: Distribution<T>,
-{
-    let mut simulation_grid = cold_gauss_kspace::<T>(mean, std, parameters, phase_seed);
-    sample_quantum_perturbation::<T>(&mut simulation_grid, parameters, scheme, sample_seed);
-    simulation_grid
-}
-
 /// This function takes in some input and returns it with some noise based on given `n` and sampling method.
 pub fn sample_quantum_perturbation<T>(
     grid: &mut SimulationGrid<T>,
     parameters: &SimulationParameters<T>,
-    scheme: SamplingScheme,
-    seed: Option<u64>,
+    sample_parameters: &SamplingParameters,
 ) where
     T: Display
         + Float
@@ -652,6 +494,7 @@ pub fn sample_quantum_perturbation<T>(
     let sqrt_n: T = T::from_f64(n.sqrt()).unwrap();
     let dim4 = get_dim4(parameters.dims, parameters.size);
     let ψ = &mut grid.ψ;
+    let SamplingParameters { seed, scheme } = sample_parameters;
 
     // Convert input field to expected count per cell
     let ψ_count: Array<Complex<T>> = mul(
@@ -832,10 +675,7 @@ pub fn sample_quantum_perturbation<T>(
     }
 }
 
-pub fn user_specified_ics<T>(
-    path: String,
-    params: &mut SimulationParameters<T>,
-) -> Array<Complex<T>>
+pub fn user_specified_ics<T>(path: &str, params: &SimulationParameters<T>) -> Array<Complex<T>>
 where
     T: Float
         + FloatingPoint
@@ -893,16 +733,12 @@ where
     let size = shape[0];
 
     if params.dims != dims {
-        println!(
-            "Dimensions of user-provided data do not match the dimensions specified in the toml"
+        panic!(
+            "Dimensions of user-provided data ({dims:?}) do not match the dimensions specified in the toml ({:?})", params.dims
         );
-        println!("Modifying param.dims to match dimensions in provided initial conditions");
-        params.dims = dims;
     }
     if params.size != size {
-        println!("Size of user-provided data does not match the size specified in the toml");
-        println!("Modifying param.size to match size in provided initial conditions");
-        params.size = size;
+        panic!("Grid size of user-provided data ({size}) does not match the size specified in the toml ({})", params.size);
     }
 
     // Turn into raw vectors
@@ -931,6 +767,14 @@ fn get_dim4(dims: Dimensions, size: usize) -> Dim4 {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct SamplingParameters {
+    /// The seed used by the rng during sampling
+    pub seed: Option<u64>,
+    /// The quantum sampling scheme to use, e.g Wigner
+    pub scheme: SamplingScheme,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub enum SamplingScheme {
     Poisson,
     Wigner,
@@ -970,6 +814,12 @@ fn test_cold_gauss_initialization() {
         max_dloga: Some(1e-2),
         z0: 1.0,
     };
+    let sampling_parameters = None;
+    let ics = InitialConditions::ColdGaussKSpace {
+        mean: vec![1.0],
+        std: vec![1.0],
+        phase_seed: Some(32),
+    };
 
     let parameters = SimulationParameters::<T>::new(
         axis_length,
@@ -985,8 +835,10 @@ fn test_cold_gauss_initialization() {
         hbar_,
         num::FromPrimitive::from_usize(K).unwrap(),
         S,
+        sampling_parameters,
         #[cfg(feature = "expanding")]
         cosmo_params,
+        ics,
     );
 
     // Create a Simulation Object using Gaussian parameters and

@@ -2,16 +2,21 @@ use arrayfire::{device_info, set_device};
 use clap::Parser;
 use msm::constants::*;
 use msm::simulation_object::*;
+use msm::utils::error::RuntimeError;
+use msm::utils::io::parameters_from_toml;
+use msm::utils::io::read_toml;
+use msm::utils::io::TomlParameters;
+use std::error::Error;
 use std::time::Instant;
 
 #[derive(Parser)]
 pub struct CommandLineArguments {
     #[clap(long, short)]
-    toml: Vec<String>,
+    toml: String,
     #[clap(long, short)]
     verbose: bool,
 }
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     // Set to gpu if available
     set_device(0);
     println!("{:?}", device_info());
@@ -24,13 +29,17 @@ fn main() {
     // Start timer
     let now = Instant::now();
 
-    // Parse path to tomls
+    // Parse path to toml
     let args = CommandLineArguments::parse();
 
+    // If seeds are being used, generate individual tomls for every stream
+    let toml: TomlParameters = read_toml(&args.toml)?;
+    let streams: Vec<SimulationParameters<_>> = parameters_from_toml(toml)?;
+
     // Given a set of tomls, define simulation objects and run sims
-    for toml in &args.toml {
+    for stream in streams {
         // New sim obj from toml
-        let mut simulation_object = SimulationObject::<f64>::new_from_toml(toml);
+        let mut simulation_object = SimulationObject::<f64>::new_from_params(stream)?;
 
         // Print simulation parameters and physical constants
         println!(
@@ -60,8 +69,10 @@ fn main() {
 
     if args.toml.len() > 1 {
         println!(
-            "Finished simulations in {} seconds",
+            "Finished all simulations in {} seconds",
             now.elapsed().as_secs()
         );
     }
+
+    Ok(())
 }
