@@ -4,11 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["remote-storage", "expanding"]
+default = []
 c64 = [] # only for testing
-remote-storage = ["shadow-drive-sdk", "solana-sdk", "serde_json", "arrayfire/afserde", "bincode", "num/serde"]
+remote-storage = ["shadow-drive-sdk", "solana-sdk", "arrayfire/afserde", "bincode", "num/serde"]
 expanding = ["cosmology"]
-fake_expanding_solver = ["expanding"]
 
 [profile.release]
 debug-assertions = true
@@ -16,14 +15,12 @@ lto = true
 codegen-units = 1
 
 [dependencies]
-conv = "0.3.3"
 approx = "0.5.1"
 arrayfire = "=3.8.0"
 clap = { version = "3.1.6", features = ["derive"] }
-num = "0.2.1"
+num = { version = "0.2.1", features = ["serde"] }
 num-derive = "0.2.1"
 npy = "0.4"
-npy-derive = "0.4"
 ndarray = "0.15.4"
 ndarray-npy = "0.8.1"
 indicatif = "0.16.2"
@@ -35,11 +32,11 @@ num-traits = "0.2.14"
 toml = "0.5.9"
 serde = "1.0.98"
 serde_derive = "1.0.98"
-futures = "0.3.21"
 cosmology = { version = "0.2.0", optional = true }
 log = "0.4.17"
 env_logger = "0.9.1"
 tokio = { version = "1.14.1", features = ["rt", "macros"] }
+regex = "1.7.1"
 
 [dependencies.shadow-drive-sdk]
 version = "0.5.0"
@@ -47,10 +44,6 @@ optional = true
 
 [dependencies.solana-sdk]
 version = "1.10.34"
-optional = true
-
-[dependencies.serde_json]
-version = "1.0.91"
 optional = true
 
 [dependencies.bincode]
