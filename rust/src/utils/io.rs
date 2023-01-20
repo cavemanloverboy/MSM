@@ -296,7 +296,7 @@ pub fn parameters_from_toml<
                     num_data_dumps,
                     total_mass,
                     particle_mass,
-                    sim_name.clone(),
+                    format!("{sim_name}-stream{:05}", seed.unwrap()),
                     k2_cutoff,
                     alias_threshold,
                     Some(hbar_),
