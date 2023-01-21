@@ -8,6 +8,8 @@ edition = "2021"
 [features]
 default = []
 balancer = ["mpi"]
+cosmology = ["msm/expanding"]
+remote-storage = []
 
 [dependencies]
 num = "0.2.1"
@@ -16,13 +18,17 @@ ndarray-npy = "0.8.1"
 anyhow = "1.0"
 ndrustfft = "0.3.0"
 glob = "0.3.0"
-clap = { version = "3.1.12", features = ["derive"] }
+clap = { version = "4.1.1", features = ["derive"] }
 dashmap = "5.3.4"
 lazy_static = "1.4.0"
 
 
 [dependencies.mpi]
 version = "0.6.0"
-path = "../../rustMPItest/"
+# path = "../../rustMPItest/"
 features = ["derive"]
 optional = true
+
+[dependencies.msm]
+path = "../rust"
+default-features = false
