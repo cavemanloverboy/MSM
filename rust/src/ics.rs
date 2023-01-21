@@ -510,8 +510,7 @@ pub fn sample_quantum_perturbation<T>(
     );
 
     // RNG engine
-    let seed = Some(seed.unwrap_or(0));
-    let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, seed);
+    let engine = RandomEngine::new(arrayfire::RandomEngineType::PHILOX_4X32_10, Some(*seed));
 
     match scheme {
         SamplingScheme::Poisson => {
@@ -769,7 +768,7 @@ fn get_dim4(dims: Dimensions, size: usize) -> Dim4 {
 #[derive(Serialize, Deserialize)]
 pub struct SamplingParameters {
     /// The seed used by the rng during sampling
-    pub seed: Option<u64>,
+    pub seed: u64,
     /// The quantum sampling scheme to use, e.g Wigner
     pub scheme: SamplingScheme,
 }

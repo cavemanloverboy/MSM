@@ -64,7 +64,7 @@ pub struct SimulationParameters<T: Float + FloatingPoint> {
     // Grid Parameters
     /// Physical length of each axis (if expanding, this is the initial length)
     pub axis_length: T,
-    /// Physical length of each axis
+    /// Comoving length of each axis
     #[cfg(feature = "expanding")]
     pub comoving_boxsize: T,
     /// Spatial cell size
@@ -345,6 +345,10 @@ where
         write!(f, "{}\n", "-".repeat(40))?;
         #[cfg(feature = "expanding")]
         write!(f, "{:#?}", self.cosmo_params)?;
+        if let Some(ref sampling) = self.sampling_parameters {
+            write!(f, "{:20}= {:?}\n", "sampling_scheme", sampling.scheme)?;
+            write!(f, "{:20}= {:?}\n", "seed", sampling.seed)?;
+        }
         Ok(())
     }
 }

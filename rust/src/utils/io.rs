@@ -283,7 +283,6 @@ pub fn parameters_from_toml<
         // If sampling parametrs are specified, generate a set of simulation parameters for each seed
         Ok(seeds
             .into_iter()
-            .map(Some)
             .map(|seed| {
                 SimulationParameters::new(
                     T::from_f64(toml.axis_length).unwrap(),
@@ -296,7 +295,7 @@ pub fn parameters_from_toml<
                     num_data_dumps,
                     total_mass,
                     particle_mass,
-                    format!("{sim_name}-stream{:05}", seed.unwrap()),
+                    format!("{sim_name}-stream{:05}", seed),
                     k2_cutoff,
                     alias_threshold,
                     Some(hbar_),

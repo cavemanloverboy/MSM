@@ -45,6 +45,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut simulation_object = SimulationObject::<f64>::new_from_params(stream)?;
 
         // Print simulation parameters and physical constants
+        println!();
+        println!();
         println!(
             "Working on simulation {}",
             simulation_object.parameters.sim_name
