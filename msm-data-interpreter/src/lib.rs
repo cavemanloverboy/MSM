@@ -10,7 +10,7 @@ use std::cmp::Eq;
 use std::fmt::Display;
 use std::hash::Hash as Hashable;
 use std::ops::{AddAssign, DivAssign, MulAssign, RemAssign, SubAssign};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
 use std::time::Instant;
@@ -24,6 +24,8 @@ pub mod balancer;
 pub mod balancer_nompi;
 use balancer::Balancer;
 use balancer_nompi as balancer;
+
+static CREATE: AtomicBool = AtomicBool::new(false);
 
 /// This function loads the npy file located at `filepath`,
 /// returning a Vec<T> containing that data.
@@ -59,10 +61,7 @@ where
     real.join().unwrap() + imag
 }
 
-pub fn dump_complex<T, const K: usize, const S: usize>(
-    v: Array4<Complex<T>>,
-    path: String,
-) -> Result<()>
+pub fn dump_complex<T>(v: Array4<Complex<T>>, path: String) -> Result<()>
 where
     T: Num
         + Float
@@ -79,6 +78,12 @@ where
     let real_path = format!("{path}_real");
     let imag_path = format!("{path}_imag");
 
+    if !CREATE.swap(false, Ordering::Relaxed) {
+        drop(std::fs::create_dir_all(
+            std::path::PathBuf::from(&real_path).parent().unwrap(),
+        ));
+    }
+
     // Thread safe references
     let real_v = Arc::new(v);
     let imag_v = Arc::clone(&real_v);
@@ -93,8 +98,8 @@ where
 }
 
 /// Analyze the simulations with base name `sim_base_name`.
-pub fn analyze_sims<T, Name, const K: usize, const S: usize>(
-    functions: Arc<Functions<T, Name, K, S>>,
+pub fn analyze_sims<T, Name>(
+    functions: Arc<Functions<T, Name>>,
     sim_base_name: &String,
     dumps: &Vec<u16>,
     balancer: &mut Balancer<()>,
@@ -125,8 +130,14 @@ where
         let local_dumps = balancer.local_set(dumps);
         println!("local_dumps {} = {local_dumps:?}", balancer.rank);
 
+        // Get dims and size for move closures;
+        let dims = functions.dims;
+        let size = functions.size;
+
         for &dump in local_dumps.iter() {
-            println!("{}", format!("{}-combined/psi_{:05}", sim_base_name, dump));
+            // The number of sims with this dump
+            let nsims: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+
             let psi_exists =
                 std::path::Path::new(&format!("{}-combined/psi_{:05}_real", sim_base_name, dump))
                     .exists();
@@ -160,22 +171,22 @@ where
             .exists()
                 && psik2_exists;
             if psi_exists && psi2_exists && psik_exists && psik2_exists {
+                nsims.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
+
             println!("rank {} is taking on dump {dump}", balancer.rank);
+            let sims = glob(format!("{}-stream[00000-99999]", sim_base_name).as_str()).unwrap();
 
-            // The number of sims with this dump
-            let nsims: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
-
-            for sim in glob(format!("{}-stream000[00-63]", sim_base_name).as_str()).unwrap() {
-                // for sim in 1..=31 {
+            for sim in sims {
                 let sim: Result<String> = Ok(format!(
                     "{}-stream{:05}",
                     sim_base_name,
                     sim.unwrap().display()
                 ));
+
                 // Clone the Arc containing the functions to be evaluated
-                let local_functions: Arc<Functions<T, Name, K, S>> = functions.clone();
+                let local_functions: Arc<Functions<T, Name>> = functions.clone();
 
                 // Clone counter Arc
                 let local_counter: Arc<AtomicUsize> = nsims.clone();
@@ -192,10 +203,10 @@ where
                             let ψ = load_complex::<T>(format!("{}/psi_{:05}", &sim, dump));
                             // Calculate fft
                             let mut fft_handler: ndrustfft::FftHandler<T> =
-                                ndrustfft::FftHandler::new(S);
+                                ndrustfft::FftHandler::new(size);
                             let mut ψ_buffer;
                             let mut ψk = ψ.clone();
-                            for dim in 0..K {
+                            for dim in 0..dims {
                                 ψ_buffer = ψk.clone();
                                 ndrustfft::ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
                             }
@@ -207,14 +218,13 @@ where
 
                                 // AddAssign function output to entry
                                 let add_value = function(&ψ, &ψk);
-                                let mut entry = local_functions
+                                local_functions
                                     .array_functions
                                     .values
                                     .get_mut(field_name)
                                     .unwrap()
                                     .value_mut()
                                     .add_assign(&add_value);
-                                // entry.value_mut().add_assign(&add_value);
                             }
 
                             // Then calculate all scalars
@@ -224,18 +234,17 @@ where
 
                                 // AddAssign function output to entry
                                 let add_value = function(&ψ, &ψk);
-                                let mut entry = local_functions
+                                local_functions
                                     .scalar_functions
                                     .values
                                     .get_mut(field_name)
                                     .unwrap()
                                     .value_mut()
                                     .add_assign(add_value);
-                                //entry.value_mut().add_assign(add_value);
                             }
 
                             // Increment sims counter for this dump
-                            local_counter.fetch_add(1, Ordering::SeqCst);
+                            local_counter.fetch_add(1, Ordering::Relaxed);
 
                             println!(
                                 "Finished sim {} in {} seconds",
@@ -255,7 +264,7 @@ where
             balancer.wait();
 
             // Average and dump
-            let nsims_usize: usize = nsims.load(Ordering::SeqCst);
+            let nsims_usize: usize = nsims.load(Ordering::Relaxed);
             let path_base = format!("{}-combined/PLACEHOLDER_{:05}", sim_base_name, dump);
             {
                 // First average and dump all fields (and then zero out)
@@ -275,7 +284,7 @@ where
 
                     // Write result to disk
                     let write_path = path_base.replace("PLACEHOLDER", field_name.as_ref());
-                    dump_complex::<T, K, S>(entry.value().clone(), write_path)
+                    dump_complex::<T>(entry.value().clone(), write_path)
                         .expect(format!("Failed to dump {field_name}").as_str());
                 }
 
@@ -298,7 +307,7 @@ where
                     let dump_array = arr1(&[*entry.value()])
                         .into_shape((1, 1, 1, 1))
                         .expect("This array should only have one value");
-                    dump_complex::<T, K, S>(
+                    dump_complex::<T>(
                         dump_array,
                         path_base.replace("PLACEHOLDER", field_name.as_ref()),
                     )
@@ -321,8 +330,8 @@ pub trait Equivalence {
 
 /// Function which analyzes the resulting combined quantities after combining all individual streams
 #[allow(unreachable_code)]
-pub fn post_combine<T, Name, const K: usize, const S: usize>(
-    functions: Arc<PostCombineFunctions<T, Name, K, S>>,
+pub fn post_combine<T, Name>(
+    functions: Arc<PostCombineFunctions<T, Name>>,
     combined_base_name: String,
     dumps: &Vec<u16>,
     balancer: &mut Balancer<()>,
@@ -363,7 +372,7 @@ where
             let local_combined_base_name = Arc::clone(&combined_base_name);
 
             // Clone the Arc containing the functions to be evaluated
-            let local_functions: Arc<PostCombineFunctions<T, Name, K, S>> = functions.clone();
+            let local_functions: Arc<PostCombineFunctions<T, Name>> = functions.clone();
 
             println!("rank {} is starting {} postcombine", balancer.rank, dump);
             balancer.spawn(move || {
@@ -393,6 +402,7 @@ where
                 );
 
                 // First calculate all fields
+                #[allow(unused)] // we don't use array functions right now
                 for key_value in local_functions.post_array_functions.functions.iter() {
                     todo!("need to implement post-combine array function dump");
 
@@ -424,7 +434,11 @@ where
                         .push(output);
                 }
 
-                // println!("Finished dump {} in {} seconds", dump, now.elapsed().as_secs());
+                println!(
+                    "Finished dump {} in {} seconds",
+                    dump,
+                    now.elapsed().as_secs()
+                );
             });
         }
 
@@ -433,7 +447,7 @@ where
         println!("rank {} is waiting for local tasks", balancer.rank);
         balancer.wait();
 
-        // this block synchronizes all fielsd across nodes
+        // this block synchronizes all fields across nodes (mpi enabled)
         #[cfg(feature = "balancer")]
         {
             println!("rank {} is waiting for all others", balancer.rank);
@@ -552,6 +566,28 @@ where
                 }
             }
         }
+
+        // this block is for one node w/ no mpi
+        #[cfg(not(feature = "balancer"))]
+        {
+            for pair in functions.post_scalar_functions.values.iter() {
+                let (field_name, all_dumps) = pair.pair();
+                let scalar_series: Vec<Complex<T>> = all_dumps
+                    .into_iter()
+                    .map(|(_dump, value)| value.clone())
+                    .collect();
+                let scalar_series =
+                    Array4::from_shape_vec((scalar_series.len(), 1, 1, 1), scalar_series).unwrap();
+                dump_complex::<T>(
+                    scalar_series,
+                    combined_base_name
+                        .clone()
+                        .replace("PLACEHOLDER", field_name.as_ref())
+                        .replace("_DUMP", ""),
+                )
+                .expect(format!("Failed to dump {field_name}").as_str());
+            }
+        }
     }
 
     Ok(())
@@ -568,17 +604,17 @@ struct Scalar {
 #[cfg(not(feature = "balancer"))]
 impl<T> Equivalence for T {}
 
-fn get_shape<const K: usize, const S: usize>() -> (usize, usize, usize, usize) {
-    match K {
-        1 => (S, 1, 1, 1),
-        2 => (S, S, 1, 1),
-        3 => (S, S, S, 1),
+fn get_shape(dims: usize, size: usize) -> (usize, usize, usize, usize) {
+    match dims {
+        1 => (size, 1, 1, 1),
+        2 => (size, size, 1, 1),
+        3 => (size, size, size, 1),
         _ => panic!("Invalid dimensions"),
     }
 }
 
 type Dump = u16;
-pub struct Functions<T, Name, const K: usize, const S: usize>
+pub struct Functions<T, Name>
 where
     T: Num
         + Float
@@ -600,6 +636,8 @@ where
 {
     array_functions: ArrayFunctions<T, Name>,
     scalar_functions: ScalarFunctions<T, Name>,
+    dims: usize,
+    size: usize,
 }
 
 pub struct ArrayFunctions<T, FieldName>
@@ -662,7 +700,7 @@ where
     values: Arc<DashMap<ScalarName, Complex<T>>>,
 }
 
-pub struct PostCombineFunctions<T, Name, const K: usize, const S: usize>
+pub struct PostCombineFunctions<T, Name>
 where
     T: Num
         + Float
@@ -718,6 +756,7 @@ where
             >,
         >,
     >,
+    #[allow(dead_code)] // we don't use array functions right now
     values: Arc<DashMap<FieldName, Array4<Complex<T>>>>,
 }
 
@@ -757,7 +796,7 @@ where
     values: Arc<DashMap<ScalarName, Vec<(u16, Complex<T>)>>>,
 }
 
-impl<T, Name, const K: usize, const S: usize> Functions<T, Name, K, S>
+impl<T, Name> Functions<T, Name>
 where
     T: Num
         + Float
@@ -796,9 +835,11 @@ where
                     + Sync,
             >,
         )>,
+        dims: usize,
+        size: usize,
     ) -> Self {
         // Get shape
-        let shape = get_shape::<K, S>();
+        let shape = get_shape(dims, size);
 
         // Construct array dashmap
         let array_dashmap = Arc::new(DashMap::new());
@@ -845,6 +886,8 @@ where
                 functions: scalar_dashmap,
                 values: scalar_values,
             },
+            dims,
+            size,
         }
     }
 
@@ -856,7 +899,7 @@ where
 
             // AddAssign function output to entry
             let mut entry = self.array_functions.values.get_mut(field_name).unwrap();
-            *entry.value_mut() = Array4::zeros(get_shape::<K, S>());
+            *entry.value_mut() = Array4::zeros(get_shape(self.dims, self.size));
         }
 
         // Zero out scalars
@@ -871,7 +914,7 @@ where
     }
 }
 
-impl<T, Name, const K: usize, const S: usize> PostCombineFunctions<T, Name, K, S>
+impl<T, Name> PostCombineFunctions<T, Name>
 where
     T: Num
         + Float
@@ -921,9 +964,11 @@ where
                     + Sync,
             >,
         )>,
+        dims: usize,
+        size: usize,
     ) -> Self {
         // Get shape
-        let shape = get_shape::<K, S>();
+        let shape = get_shape(dims, size);
 
         // Construct array dashmap
         let array_dashmap = Arc::new(DashMap::new());
