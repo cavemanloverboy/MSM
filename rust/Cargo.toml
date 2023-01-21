@@ -9,11 +9,6 @@ c64 = [] # only for testing
 remote-storage = ["shadow-drive-sdk", "solana-sdk", "arrayfire/afserde", "bincode", "num/serde"]
 expanding = ["cosmology"]
 
-[profile.release]
-debug-assertions = true
-lto = true
-codegen-units = 1
-
 [dependencies]
 approx = "0.5.1"
 arrayfire = "=3.8.0"
