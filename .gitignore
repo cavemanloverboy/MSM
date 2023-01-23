@@ -1,1 +1,4 @@
 target
+simulator/arrayfire
+sim-data/
+keypair.json

@@ -1,0 +1,15 @@
+[package]
+name = "msm-common"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+expanding = []
+remote-storage = []
+
+[dependencies]
+regex = "1.7.1"
+serde = "1.0.152"
+thiserror = "1.0.38"
+toml = "0.5.11"
