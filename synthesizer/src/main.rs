@@ -1,10 +1,11 @@
 use clap::Parser;
+use log::LevelFilter;
 use msm_common::TomlParameters;
 use msm_synthesizer::{analyze_sims, post_combine, Functions, PostCombineFunctions};
 use ndarray::{Array4, ArrayBase, Dim, OwnedRepr};
 use ndrustfft::Complex;
-use std::error::Error;
 use std::sync::Arc;
+use std::{error::Error, str::FromStr};
 
 #[cfg(feature = "balancer")]
 use msm_synthesizer::balancer::Balancer;
@@ -20,12 +21,24 @@ struct Args {
     /// path to toml used to run simulations
     #[arg(short, long)]
     toml: String,
+
+    /// path to toml used to run simulations
+    #[arg(short, long)]
+    verbosity: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Starting DI");
-
     let args = Args::parse();
+
+    env_logger::builder()
+        .filter_level(LevelFilter::from_str(
+            args.verbosity
+                .as_ref()
+                .map(<String as AsRef<str>>::as_ref)
+                .unwrap_or("off"),
+        )?)
+        .init();
 
     let toml: TomlParameters = msm_common::read_toml(&args.toml)?;
 
@@ -112,7 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Balancer::<()>::new(world, 5)
     };
     #[cfg(not(feature = "balancer"))]
-    let mut balancer = Balancer::<()>::new(5);
+    let mut balancer = Balancer::<()>::new(8);
 
     println!("begin analyze_sims");
     analyze_sims::<f64, &str>(functions, &sim_base_name, &dumps, &mut balancer)?;

@@ -681,7 +681,7 @@ where
         .expect("failed to read file as npz");
 
     // Read contents of file
-    println!("{:?}", npz.names());
+    // println!("{:?}", npz.names());
     let np_real: ArrayBase<OwnedRepr<T>, ndarray::IxDyn> = npz
         .by_name("real.npy")
         .expect("couldn't read real part of field");

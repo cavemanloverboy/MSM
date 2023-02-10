@@ -26,6 +26,18 @@ use balancer::Balancer;
 use balancer_nompi as balancer;
 
 static CREATE: AtomicBool = AtomicBool::new(false);
+macro_rules! debug_check_complex {
+    ($z:expr) => {{
+        debug_assert!(check_complex($z));
+        $z
+    }};
+}
+macro_rules! debug_check {
+    ($z:expr) => {{
+        debug_assert!(check($z));
+        $z
+    }};
+}
 
 /// This function loads the npy file located at `filepath`,
 /// returning a Vec<T> containing that data.
@@ -74,7 +86,6 @@ where
         + Sync
         + 'static,
 {
-    println!("writing to {}", &path);
     let real_path = format!("{path}_real");
     let imag_path = format!("{path}_imag");
 
@@ -128,7 +139,7 @@ where
     {
         // Get local set of dumps
         let local_dumps = balancer.local_set(dumps);
-        println!("local_dumps {} = {local_dumps:?}", balancer.rank);
+        log::debug!("local_dumps {} = {local_dumps:?}", balancer.rank);
 
         // Get dims and size for move closures;
         let dims = functions.dims;
@@ -138,133 +149,142 @@ where
             // The number of sims with this dump
             let nsims: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
 
-            let psi_exists =
-                std::path::Path::new(&format!("{}-combined/psi_{:05}_real", sim_base_name, dump))
-                    .exists();
-            let psi2_exists =
-                std::path::Path::new(&format!("{}-combined/psi2_{:05}_real", sim_base_name, dump))
-                    .exists();
-            let psik_exists =
-                std::path::Path::new(&format!("{}-combined/psik_{:05}_real", sim_base_name, dump))
-                    .exists();
-            let psik2_exists = std::path::Path::new(&format!(
-                "{}-combined/psik2_{:05}_real",
-                sim_base_name, dump
-            ))
-            .exists();
-            let psi_exists =
-                std::path::Path::new(&format!("{}-combined/psi_{:05}_imag", sim_base_name, dump))
-                    .exists()
-                    && psi_exists;
-            let psi2_exists =
-                std::path::Path::new(&format!("{}-combined/psi2_{:05}_imag", sim_base_name, dump))
-                    .exists()
-                    && psi2_exists;
-            let psik_exists =
-                std::path::Path::new(&format!("{}-combined/psik_{:05}_imag", sim_base_name, dump))
-                    .exists()
-                    && psik_exists;
-            let psik2_exists = std::path::Path::new(&format!(
-                "{}-combined/psik2_{:05}_imag",
-                sim_base_name, dump
-            ))
-            .exists()
-                && psik2_exists;
-            if psi_exists && psi2_exists && psik_exists && psik2_exists {
-                nsims.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
+            // TODO: come back to this to allow resuming partial DI progress
+            // let psi_exists =
+            //     std::path::Path::new(&format!("{}-combined/psi_{:05}_real", sim_base_name, dump))
+            //         .exists();
+            // let psi2_exists =
+            //     std::path::Path::new(&format!("{}-combined/psi2_{:05}_real", sim_base_name, dump))
+            //         .exists();
+            // let psik_exists =
+            //     std::path::Path::new(&format!("{}-combined/psik_{:05}_real", sim_base_name, dump))
+            //         .exists();
+            // let psik2_exists = std::path::Path::new(&format!(
+            //     "{}-combined/psik2_{:05}_real",
+            //     sim_base_name, dump
+            // ))
+            // .exists();
+            // let psi_exists =
+            //     std::path::Path::new(&format!("{}-combined/psi_{:05}_imag", sim_base_name, dump))
+            //         .exists()
+            //         && psi_exists;
+            // let psi2_exists =
+            //     std::path::Path::new(&format!("{}-combined/psi2_{:05}_imag", sim_base_name, dump))
+            //         .exists()
+            //         && psi2_exists;
+            // let psik_exists =
+            //     std::path::Path::new(&format!("{}-combined/psik_{:05}_imag", sim_base_name, dump))
+            //         .exists()
+            //         && psik_exists;
+            // let psik2_exists = std::path::Path::new(&format!(
+            //     "{}-combined/psik2_{:05}_imag",
+            //     sim_base_name, dump
+            // ))
+            // .exists()
+            //     && psik2_exists;
+            // if psi_exists && psi2_exists && psik_exists && psik2_exists {
+            //     nsims.fetch_add(1, Ordering::Relaxed);
+            //     continue;
+            // }
 
-            println!("rank {} is taking on dump {dump}", balancer.rank);
-            let sims = glob(format!("{}-stream[00000-99999]", sim_base_name).as_str()).unwrap();
+            log::trace!("rank {} is taking on dump {dump}", balancer.rank);
+            let sims = glob(format!("./{}-stream*/", sim_base_name).as_str())
+                .unwrap()
+                .map(Result::unwrap)
+                .map(|p| p.display().to_string());
 
             for sim in sims {
-                let sim: Result<String> = Ok(format!(
-                    "{}-stream{:05}",
-                    sim_base_name,
-                    sim.unwrap().display()
-                ));
-
                 // Clone the Arc containing the functions to be evaluated
                 let local_functions: Arc<Functions<T, Name>> = functions.clone();
 
                 // Clone counter Arc
                 let local_counter: Arc<AtomicUsize> = nsims.clone();
 
-                match sim {
-                    Ok(sim) => {
-                        balancer.spawn(move || {
-                            // Start timer for this (dump, sim)
-                            let now = Instant::now();
+                balancer.spawn(move || {
+                    // Start timer for this (dump, sim)
+                    let now = Instant::now();
 
-                            println!("Starting sim {}", &sim);
+                    log::trace!("Starting (dump, sim) = ({dump}, {sim})");
 
-                            // Load psi for this (dump, sim)
-                            let ψ = load_complex::<T>(format!("{}/psi_{:05}", &sim, dump));
-                            // Calculate fft
-                            let mut fft_handler: ndrustfft::FftHandler<T> =
-                                ndrustfft::FftHandler::new(size);
-                            let mut ψ_buffer;
-                            let mut ψk = ψ.clone();
-                            for dim in 0..dims {
-                                ψ_buffer = ψk.clone();
-                                ndrustfft::ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
-                            }
-
-                            // First calculate all fields
-                            for key_value in local_functions.array_functions.functions.iter() {
-                                // Extract (key, value) pair
-                                let (field_name, function) = key_value.pair();
-
-                                // AddAssign function output to entry
-                                let add_value = function(&ψ, &ψk);
-                                local_functions
-                                    .array_functions
-                                    .values
-                                    .get_mut(field_name)
-                                    .unwrap()
-                                    .value_mut()
-                                    .add_assign(&add_value);
-                            }
-
-                            // Then calculate all scalars
-                            for key_value in local_functions.scalar_functions.functions.iter() {
-                                // Extract (key, value) pair
-                                let (field_name, function) = key_value.pair();
-
-                                // AddAssign function output to entry
-                                let add_value = function(&ψ, &ψk);
-                                local_functions
-                                    .scalar_functions
-                                    .values
-                                    .get_mut(field_name)
-                                    .unwrap()
-                                    .value_mut()
-                                    .add_assign(add_value);
-                            }
-
-                            // Increment sims counter for this dump
-                            local_counter.fetch_add(1, Ordering::Relaxed);
-
-                            println!(
-                                "Finished sim {} in {} seconds",
-                                &sim,
-                                now.elapsed().as_secs()
-                            );
-                        });
+                    // Load psi for this (dump, sim)
+                    let ψ = load_complex::<T>(format!("{}/psi_{:05}", &sim, dump));
+                    // Calculate fft
+                    let mut fft_handler: ndrustfft::FftHandler<T> =
+                        ndrustfft::FftHandler::new(size);
+                    let mut ψ_buffer;
+                    let mut ψk = ψ.clone();
+                    for dim in 0..dims {
+                        ψ_buffer = ψk.clone();
+                        ndrustfft::ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
                     }
-                    Err(e) => {
-                        panic!("invalid sim file or path: {e:?} ")
+                    assert!(ψk.iter().all(|x| x.re.is_finite() && x.im.is_finite()));
+
+                    // First calculate all fields
+                    for key_value in local_functions.array_functions.functions.iter() {
+                        // Extract (key, value) pair
+                        let (field_name, function) = key_value.pair();
+
+                        // AddAssign function output to entry
+                        let add_value = function(&ψ, &ψk);
+                        local_functions
+                            .array_functions
+                            .values
+                            .get_mut(field_name)
+                            .unwrap()
+                            .value_mut()
+                            .add_assign(&add_value);
+
+                        // TODO debug
+                        debug_assert!(local_functions
+                            .array_functions
+                            .values
+                            .get(field_name)
+                            .unwrap()
+                            .value()
+                            .into_iter()
+                            .all(|x| x.re.is_finite() && x.im.is_finite()))
                     }
-                }
+
+                    // Then calculate all scalars
+                    for key_value in local_functions.scalar_functions.functions.iter() {
+                        // Extract (key, value) pair
+                        let (field_name, function) = key_value.pair();
+
+                        // AddAssign function output to entry
+                        let add_value = function(&ψ, &ψk);
+                        local_functions
+                            .scalar_functions
+                            .values
+                            .get_mut(field_name)
+                            .unwrap()
+                            .value_mut()
+                            .add_assign(add_value);
+                        debug_check_complex!(local_functions
+                            .scalar_functions
+                            .values
+                            .get(field_name)
+                            .unwrap()
+                            .value());
+                    }
+
+                    // Increment sims counter for this dump
+                    local_counter.fetch_add(1, Ordering::Relaxed);
+
+                    log::trace!(
+                        "Finished (dump, sim) = ({dump}, {sim}) in {} seconds",
+                        now.elapsed().as_secs()
+                    );
+                });
             }
 
             // Wait for iteration though all sims (only on this thread)
-            println!("waiting");
-            balancer.wait();
+            log::trace!("waiting");
+            balancer.barrier();
+            log::info!("rank {} finished dump {dump}", balancer.rank);
 
             // Average and dump
             let nsims_usize: usize = nsims.load(Ordering::Relaxed);
+            assert!(nsims_usize > 0);
             let path_base = format!("{}-combined/PLACEHOLDER_{:05}", sim_base_name, dump);
             {
                 // First average and dump all fields (and then zero out)
@@ -281,6 +301,9 @@ where
                     entry
                         .value_mut()
                         .div_assign(Complex::new(T::from_usize(nsims_usize).unwrap(), T::zero()));
+                    entry.iter().for_each(|z| {
+                        debug_check_complex!(z);
+                    });
 
                     // Write result to disk
                     let write_path = path_base.replace("PLACEHOLDER", field_name.as_ref());
@@ -302,6 +325,7 @@ where
                     entry
                         .value_mut()
                         .div_assign(T::from_usize(nsims_usize).unwrap());
+                    debug_check_complex!(*entry);
 
                     // Write result to disk
                     let dump_array = arr1(&[*entry.value()])
@@ -360,21 +384,19 @@ where
     {
         // Get local set
         let local_dumps = balancer.local_set(dumps);
-        println!("local_dumps {} = {local_dumps:?}", balancer.rank);
+        log::debug!("local_dumps {} = {local_dumps:?}", balancer.rank);
 
         // Put the combined base name in an Arc so that threads can share
         let combined_base_name = Arc::new(combined_base_name);
 
         for &dump in local_dumps.iter() {
-            // println!("rank {} is taking on dump {dump}", balancer.rank);
-
             // Make a clone of the pointer
             let local_combined_base_name = Arc::clone(&combined_base_name);
 
             // Clone the Arc containing the functions to be evaluated
             let local_functions: Arc<PostCombineFunctions<T, Name>> = functions.clone();
 
-            println!("rank {} is starting {} postcombine", balancer.rank, dump);
+            log::trace!("rank {} is starting {} postcombine", balancer.rank, dump);
             balancer.spawn(move || {
                 // Start timer for this (dump, sim)
                 let now = Instant::now();
@@ -434,9 +456,8 @@ where
                         .push(output);
                 }
 
-                println!(
-                    "Finished dump {} in {} seconds",
-                    dump,
+                log::trace!(
+                    "Finished dump {dump} in {} seconds",
                     now.elapsed().as_secs()
                 );
             });
@@ -444,16 +465,16 @@ where
 
         // Wait for iteration though all sims
         // extra debug info: waits for local threads to finish before printing
-        println!("rank {} is waiting for local tasks", balancer.rank);
+        log::debug!("rank {} is waiting for local tasks", balancer.rank);
         balancer.wait();
 
         // this block synchronizes all fields across nodes (mpi enabled)
         #[cfg(feature = "balancer")]
         {
-            println!("rank {} is waiting for all others", balancer.rank);
+            log::debug!("rank {} is waiting for all others", balancer.rank);
             balancer.barrier();
             if balancer.rank == 0 {
-                println!("all done. onto mpi syncronization");
+                log::debug!("all done. onto mpi syncronization");
             }
 
             // Sort fields locally so all ranks agree on order
@@ -488,22 +509,22 @@ where
 
                 // Buffer used to gather counts
                 let mut gather_counts = vec![0_i32; balancer.size];
-                println!("gather_counts({field_name}) is expecting {}", balancer.size);
+                log::debug!("gather_counts({field_name}) is expecting {}", balancer.size);
 
                 // Buffer used to gather Scalar<T>
                 let mut gather_vec: Vec<Scalar> = vec![Scalar::default(); dumps.len()];
-                println!("gather_vec({field_name}) is expecting {}", dumps.len());
+                log::debug!("gather_vec({field_name}) is expecting {}", dumps.len());
 
                 if balancer.rank == leader_rank as usize {
                     // If leader, first gather counts
-                    println!(
+                    log::debug!(
                         "rank {} (leader) has {} {}",
                         balancer.rank,
                         vec_to_send.len(),
                         &field_name
                     );
                     leader.gather_into_root(&(vec_to_send.len() as i32), &mut gather_counts[..]);
-                    println!("gather_counts = {gather_counts:?}");
+                    log::debug!("gather_counts = {gather_counts:?}");
 
                     // Use counts to compute displacements
                     let displs: Vec<Count> = gather_counts
@@ -514,14 +535,14 @@ where
                             Some(tmp)
                         })
                         .collect();
-                    println!("displs = {displs:?}");
+                    log::debug!("displs = {displs:?}");
 
                     // Then gather payloads
                     {
                         let mut partition =
                             PartitionMut::new(&mut gather_vec[..], gather_counts, &displs[..]);
                         leader.gather_varcount_into_root(&vec_to_send[..], &mut partition);
-                        println!("Leader gathered scalar {field_name}: {gather_vec:?}");
+                        log::debug!("Leader gathered scalar {field_name}: {gather_vec:?}");
                     }
 
                     // Sort vector
@@ -541,7 +562,7 @@ where
                     )
                     .into_shape((dumps.len(), 1, 1, 1))
                     .unwrap();
-                    println!("Sorted {field_name}: {time_series:?}");
+                    log::debug!("Sorted {field_name}: {time_series:?}");
 
                     // Dump to disk
                     dump_complex::<T, K, S>(
@@ -553,7 +574,7 @@ where
                     .expect(format!("Failed to dump {field_name}").as_str());
                 } else {
                     // First send count
-                    println!(
+                    log::debug!(
                         "rank {} is going to send {} {}",
                         balancer.rank,
                         vec_to_send.len(),
@@ -1045,4 +1066,12 @@ where
             entry.value_mut().clear();
         }
     }
+}
+
+fn check_complex<T: Float>(z: impl std::borrow::Borrow<Complex<T>>) -> bool {
+    z.borrow().re.is_finite() && z.borrow().im.is_finite()
+}
+
+fn check<T: Float>(z: impl std::borrow::Borrow<T>) -> bool {
+    z.borrow().is_finite()
 }
