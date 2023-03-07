@@ -32,12 +32,6 @@ macro_rules! debug_check_complex {
         $z
     }};
 }
-macro_rules! debug_check {
-    ($z:expr) => {{
-        debug_assert!(check($z));
-        $z
-    }};
-}
 
 /// This function loads the npy file located at `filepath`,
 /// returning a Vec<T> containing that data.
@@ -1070,8 +1064,4 @@ where
 
 fn check_complex<T: Float>(z: impl std::borrow::Borrow<Complex<T>>) -> bool {
     z.borrow().re.is_finite() && z.borrow().im.is_finite()
-}
-
-fn check<T: Float>(z: impl std::borrow::Borrow<T>) -> bool {
-    z.borrow().is_finite()
 }

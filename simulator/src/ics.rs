@@ -716,14 +716,13 @@ where
     // Turn into raw vectors
     let np_real: Vec<T> = np_real.into_raw_vec();
     let np_imag: Vec<T> = np_imag.into_raw_vec();
-    println!("np_real is {}", np_real.len());
+    let dim4 = get_dim4(dims, size);
 
     // Construct complex data array
     let mut data: Vec<Complex<T>> = Vec::<Complex<T>>::with_capacity(size.pow(dims as u32));
-    for (&real, imag) in np_real.iter().zip(np_imag) {
+    for (real, imag) in np_real.into_iter().zip(np_imag) {
         data.push(Complex::<T>::new(real, imag));
     }
-    let dim4 = get_dim4(dims, size);
     let data: Array<Complex<T>> = Array::new(&data, dim4);
 
     // Return data

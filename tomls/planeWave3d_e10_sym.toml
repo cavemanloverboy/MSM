@@ -1,0 +1,35 @@
+
+# all units in kpc, Msolar, Myr
+axis_length                 = 60.0
+final_sim_time              = 2000.0
+cfl                         = 0.1
+num_data_dumps              = 64
+total_mass                  = 3e+16
+#particle_mass              = None
+hbar_                       = 0.01
+sim_name                    = "planeWave3d_e10_sym"
+ntot                        = 10000000000.0
+k2_cutoff                   = 0.95
+alias_threshold             = 0.001
+dims                        = 3
+size                        = 16
+
+[ics]                         
+type                        = "UserSpecified"
+path                        = "initial_conditions/planeWave3d_e10_sym.npz"
+
+[cosmology]
+omega_matter_now            = 1.0
+omega_radiation_now         = 0.0
+h                           = 1e-07
+z0                          = 99.0
+max_dloga                   = 0.01
+
+[sampling]
+num_streams = 16
+seeds = "1 to 16"
+scheme = "Wigner"
+
+[remote_storage_parameters]
+keypair = "dev.json"
+storage_account = "streams"
