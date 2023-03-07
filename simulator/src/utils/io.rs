@@ -169,7 +169,7 @@ pub fn parameters_from_toml<
                     Some(SamplingParameters { seed, scheme }),
                     toml.ics.clone(),
                     #[cfg(feature = "remote-storage")]
-                    RemoteStorage::new(toml.remote_storage_parameters.clone())?,
+                    RemoteStorage::new(toml.remote_storage_parameters.clone(), Some(seed))?,
                 ))
             })
             .collect::<Result<Vec<SimulationParameters<T>>, RuntimeError>>()?)
@@ -195,7 +195,7 @@ pub fn parameters_from_toml<
             None,
             toml.ics,
             #[cfg(feature = "remote-storage")]
-            RemoteStorage::new(toml.remote_storage_parameters)?,
+            RemoteStorage::new(toml.remote_storage_parameters, None)?,
         )])
     }
 }
@@ -225,7 +225,8 @@ fn test_deserialize_toml() {
 
     //ics                         = {{ {ics_string} }} \n\n \
 
-    let toml_contents: String = format!(
+    #[allow(unused_mut)]
+    let mut toml_contents: String = format!(
         "\
     axis_length                 = {axis_length}\n\
     final_sim_time              = {final_sim_time}\n\
@@ -248,6 +249,14 @@ fn test_deserialize_toml() {
     "
     );
     println!("{toml_contents}");
+    #[cfg(feature = "remote-storage")]
+    toml_contents.push_str(
+        " \
+    [remote_storage_parameters]
+    keypair = \"abc.json\"
+    storage_account = \"my account\"
+    ",
+    );
 
     let toml: TomlParameters = toml::from_str(&toml_contents).unwrap();
 
@@ -297,6 +306,7 @@ pub struct RemoteStorage {
 impl RemoteStorage {
     pub(crate) fn new(
         remote_storage_parameters: RemoteStorageParameters,
+        stream: Option<u64>,
     ) -> Result<RemoteStorage, RuntimeError> {
         const SOLANA_MAINNET_BETA_ENDPOINT: &'static str = "https://api.mainnet-beta.solana.com";
 
@@ -319,13 +329,24 @@ impl RemoteStorage {
             keypair,
             SOLANA_MAINNET_BETA_ENDPOINT,
         ));
-        let storage_account: Pubkey = get_account_pubkey(
-            rt.block_on(client.get_storage_accounts(&pubkey))
-                .expect("client error")
-                .into_iter()
-                .find(|acct| get_account_name(acct) == &remote_storage_parameters.storage_account)
-                .expect("storage account doesn't exist"),
-        );
+        let storage_account: Pubkey = get_account_pubkey({
+            let mut storage_accounts: Vec<StorageAcct> = rt
+                .block_on(client.get_storage_accounts(&pubkey))
+                .expect("client error");
+            storage_accounts.retain(|acct| {
+                get_account_name(acct).contains(&remote_storage_parameters.storage_account)
+            });
+            std::panic::catch_unwind(move || {
+                if let Some(stream) = stream {
+                    // Rotate if doing streams
+                    storage_accounts.swap_remove(stream as usize % storage_accounts.len())
+                } else {
+                    // Otherwise just get first
+                    storage_accounts.swap_remove(0)
+                }
+            })
+            .expect("storage account not found")
+        });
 
         // Get files currently stores on account
         let files = Arc::new(RwLock::new(
@@ -347,23 +368,24 @@ impl RemoteStorage {
         filename: String,
     ) -> tokio::task::JoinHandle<String>
     where
-        Complex<T>: arrayfire::HasAfEnum + serde::Serialize,
+        Complex<T>: arrayfire::HasAfEnum + serde::Serialize + Send + Sync + 'static,
     {
         // Serialize the grid
-        let bytes: Vec<u8> = bincode::serialize(&grid).unwrap();
+        let mut host: Vec<Complex<T>> = vec![Complex::<T>::default(); grid.elements()];
+        grid.host(&mut host);
 
         // Upload the grid
         let client = Arc::clone(&self.client);
         let storage_account = self.storage_account.clone();
         let files = Arc::clone(&self.files);
         if files.read().unwrap().contains(&filename) {
-            let account = self.storage_account.clone();
             return self.rt.spawn(async move {
+                let bytes: Vec<u8> = bincode::serialize(&host).unwrap();
                 // Overwrite file
                 let url = format!(
                     "{}/{}/{}",
                     shadow_drive_sdk::constants::SHDW_DRIVE_OBJECT_PREFIX,
-                    account,
+                    storage_account,
                     filename,
                 );
                 let mut response = client
@@ -376,6 +398,8 @@ impl RemoteStorage {
             });
         } else {
             return self.rt.spawn(async move {
+                let bytes: Vec<u8> = bincode::serialize(&host).unwrap();
+
                 // Upload file
                 let mut response = client
                     .store_files(
