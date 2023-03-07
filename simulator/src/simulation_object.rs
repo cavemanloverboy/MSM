@@ -455,6 +455,7 @@ where
             scale_factor_solver,
             pb,
         };
+
         debug_assert!(check_norm::<T>(
             &sim_obj.grid.ψ,
             sim_obj.parameters.dx,
