@@ -12,8 +12,8 @@ const LINUX_3_8_0_INSTALLER: &'static str =
 
 /// URL to 3.7.2 mac installer
 #[cfg(target_os = "macos")]
-const MAC_3_8_0_INSTALLER: &'static str =
-    "https://arrayfire.s3.amazonaws.com/3.7.2/ArrayFire-3.7.2_OSX_x86_64.pkg";
+const MAC_3_8_2_INSTALLER: &'static str =
+    "https://arrayfire.s3.amazonaws.com/3.8.2/ArrayFire-3.7.2_OSX_x86_64.pkg";
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=./arrayfire/");
@@ -27,11 +27,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         env::var("LD_LIBRARY_PATH").unwrap(),
         &env::var("AF_PATH").unwrap()
     );
-    // println!(
-    //     "cargo:warning= these are the vars: {}, {}",
-    //     env::var("AF_PATH").unwrap(),
-    //     env!("LD_LIBRARY_PATH")
-    // );
 
     // Build arrayfire if necessary
     if std::path::Path::exists("./arrayfire".as_ref()) {
@@ -40,32 +35,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         build_arrayfire()?;
     }
 
-    // Set env vars
-
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn build_arrayfire() {
-    todo!(format!("write mac installer, {MAC_3_8_0_INSTALLER}"))
-}
-
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn build_arrayfire() -> Result<(), Box<dyn Error>> {
     // Download installer if necessary
+    #[cfg(target_os = "linux")]
     if !std::path::Path::exists("af_installer.sh".as_ref()) {
         download_file(LINUX_3_8_0_INSTALLER)?;
     }
+    #[cfg(target_os = "macos")]
+    if !std::path::Path::exists("Arrayfire.pkg".as_ref()) {
+        download_file(MAC_3_8_2_INSTALLER)?;
+    }
 
     // Run installer
-    println!("installer");
-    println!(
-        "{:?}",
-        std::process::Command::new("bash")
-            .args(["af_installer.sh", "--include-subdir", "--skip-license"])
-            .output()
-            .expect("failed to build arrayfire")
-    );
+    std::process::Command::new("bash")
+        .args(["af_installer.sh", "--include-subdir", "--skip-license"])
+        .output()
+        .expect("failed to build arrayfire");
 
     // delete installer
     std::fs::remove_file("af_installer.sh").expect("failed to delete installer file");
