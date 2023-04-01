@@ -1,6 +1,7 @@
 use arrayfire::{device_info, set_device};
 use clap::Parser;
 use msm_common::{constants::*, read_toml, TomlParameters};
+use msm_simulator::utils::io::SimulationIter;
 use msm_simulator::{simulation_object::*, utils::io::parameters_from_toml};
 use std::error::Error;
 use std::time::Instant;
@@ -14,6 +15,9 @@ pub struct CommandLineArguments {
     #[clap(long)]
     test: bool,
 }
+
+type T = f64;
+
 fn main() -> Result<(), Box<dyn Error>> {
     // Set to gpu if available
     set_device(0);
@@ -32,13 +36,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // If seeds are being used, generate individual tomls for every stream
     let toml: TomlParameters = read_toml(&args.toml)?;
-    let streams: Vec<SimulationParameters<_>> = parameters_from_toml(toml)?;
+    let streams: SimulationIter<T> = parameters_from_toml(toml);
     let multi_stream: bool = streams.len() > 1;
 
     // Given a set of tomls, define simulation objects and run sims
     for stream in streams {
         // New sim obj from toml
-        let mut simulation_object = SimulationObject::<f64>::new_from_params(stream)?;
+        let mut simulation_object = SimulationObject::<T>::new_from_params(stream)?;
 
         // Print simulation parameters and physical constants
         if args.verbose {

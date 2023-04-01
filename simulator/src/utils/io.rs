@@ -3,6 +3,7 @@ use arrayfire::{Array, ConstGenerator, Dim4, FloatingPoint, Fromf64, HasAfEnum};
 use ndarray_npy::{write_npy, WritableElement};
 use num::{Complex, Float, FromPrimitive};
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::thread::{spawn, JoinHandle};
 use std::time::Instant;
@@ -111,6 +112,18 @@ pub fn array_to_dim4(dim4: [u64; 4]) -> Dim4 {
     Dim4::new(&dim4)
 }
 
+pub struct SimulationIter<T> {
+    toml: TomlParameters,
+    seeds: Option<Vec<u64>>,
+    original_len: usize,
+    phantom: PhantomData<T>,
+}
+impl<T> SimulationIter<T> {
+    pub fn len(&self) -> usize {
+        self.original_len
+    }
+}
+
 pub fn parameters_from_toml<
     T: FromPrimitive
         + Float
@@ -122,38 +135,64 @@ pub fn parameters_from_toml<
         + ConstGenerator<OutType = T>,
 >(
     toml: TomlParameters,
-) -> Result<Vec<SimulationParameters<T>>, RuntimeError> {
-    // Calculate overdetermined parameters
-    let (particle_mass, hbar_) = determine_pmass_hbar_(&toml);
+) -> SimulationIter<T> {
+    let seeds = toml
+        .sampling
+        .as_ref()
+        .map(|sp| sp.seeds.clone())
+        .unwrap_or(vec![]);
+    SimulationIter {
+        toml,
+        original_len: seeds.len(),
+        seeds: Some(seeds),
+        phantom: PhantomData::default(),
+    }
+}
 
-    // Extract required parameters from toml
-    let axis_length: T = T::from_f64(toml.axis_length).unwrap();
-    let time: T = T::from_f64(toml.time.unwrap_or(0.0)).unwrap();
-    #[allow(unused_assignments)]
-    let final_sim_time: T = T::from_f64(toml.final_sim_time).unwrap();
-    let cfl: T = T::from_f64(toml.cfl).unwrap();
-    let num_data_dumps: u32 = toml.num_data_dumps;
-    let total_mass: f64 = toml.total_mass;
-    let sim_name: String = toml.sim_name;
-    let k2_cutoff: f64 = toml.k2_cutoff;
-    let alias_threshold: f64 = toml.alias_threshold;
-    let dims = num::FromPrimitive::from_usize(toml.dims).unwrap();
-    let size = toml.size;
-    let output_potential = toml.output_potential;
+impl<T> Iterator for SimulationIter<T>
+where
+    T: FromPrimitive
+        + Float
+        + FloatingPoint
+        + Display
+        + HasAfEnum<InType = T>
+        + HasAfEnum<BaseType = T>
+        + Fromf64
+        + ConstGenerator<OutType = T>,
+{
+    type Item = SimulationParameters<T>;
+    fn next(&mut self) -> Option<Self::Item> {
+        // Calculate overdetermined parameters
+        let (particle_mass, hbar_) = determine_pmass_hbar_(&self.toml);
 
-    if let Some(TomlSamplingParameters { scheme, seeds }) = toml.sampling {
-        // If sampling parametrs are specified, generate a set of simulation parameters for each seed
-        Ok(seeds
-            .into_iter()
-            .map(|seed| -> Result<SimulationParameters<T>, RuntimeError> {
-                Ok(SimulationParameters::new(
-                    T::from_f64(toml.axis_length).unwrap(),
-                    toml.time
+        // Extract required parameters from toml
+        let axis_length: T = T::from_f64(self.toml.axis_length).unwrap();
+        let time: T = T::from_f64(self.toml.time.unwrap_or(0.0)).unwrap();
+        #[allow(unused_assignments)]
+        let final_sim_time: T = T::from_f64(self.toml.final_sim_time).unwrap();
+        let cfl: T = T::from_f64(self.toml.cfl).unwrap();
+        let num_data_dumps: u32 = self.toml.num_data_dumps;
+        let total_mass: f64 = self.toml.total_mass;
+        let sim_name: String = self.toml.sim_name.clone();
+        let k2_cutoff: f64 = self.toml.k2_cutoff;
+        let alias_threshold: f64 = self.toml.alias_threshold;
+        let dims = num::FromPrimitive::from_usize(self.toml.dims).unwrap();
+        let size = self.toml.size;
+        let output_potential = self.toml.output_potential;
+
+        if let Some(ref mut seeds) = self.seeds {
+            if !seeds.is_empty() {
+                let seed = seeds.remove(0);
+                let scheme = self.toml.sampling.as_ref().unwrap().scheme;
+                return Some(SimulationParameters::new(
+                    T::from_f64(self.toml.axis_length).unwrap(),
+                    self.toml
+                        .time
                         .map(T::from_f64)
                         .unwrap_or(Some(T::zero()))
                         .unwrap(),
-                    T::from_f64(toml.final_sim_time).unwrap(),
-                    T::from_f64(toml.cfl).unwrap(),
+                    T::from_f64(self.toml.final_sim_time).unwrap(),
+                    T::from_f64(self.toml.cfl).unwrap(),
                     num_data_dumps,
                     total_mass,
                     particle_mass,
@@ -165,38 +204,44 @@ pub fn parameters_from_toml<
                     size,
                     output_potential,
                     #[cfg(feature = "expanding")]
-                    toml.cosmology,
+                    self.toml.cosmology,
                     Some(SamplingParameters { seed, scheme }),
-                    toml.ics.clone(),
+                    self.toml.ics.clone(),
                     #[cfg(feature = "remote-storage")]
-                    RemoteStorage::new(toml.remote_storage_parameters.clone(), Some(seed))?,
-                ))
-            })
-            .collect::<Result<Vec<SimulationParameters<T>>, RuntimeError>>()?)
-    } else {
-        // If no seeds are specified, return only the parameters for the MFT
-        Ok(vec![SimulationParameters::<T>::new(
-            axis_length,
-            time,
-            final_sim_time,
-            cfl,
-            num_data_dumps,
-            total_mass,
-            particle_mass,
-            sim_name,
-            k2_cutoff,
-            alias_threshold,
-            Some(hbar_),
-            dims,
-            size,
-            output_potential,
-            #[cfg(feature = "expanding")]
-            toml.cosmology,
-            None,
-            toml.ics,
-            #[cfg(feature = "remote-storage")]
-            RemoteStorage::new(toml.remote_storage_parameters, None)?,
-        )])
+                    RemoteStorage::new(self.toml.remote_storage_parameters.clone(), Some(seed))
+                        .expect("failed to initialize remote storage"),
+                ));
+            } else {
+                drop(seeds);
+                self.seeds = None;
+                // if  If no seeds are specified, return only the parameters for the MFT
+                return Some(SimulationParameters::<T>::new(
+                    axis_length,
+                    time,
+                    final_sim_time,
+                    cfl,
+                    num_data_dumps,
+                    total_mass,
+                    particle_mass,
+                    sim_name,
+                    k2_cutoff,
+                    alias_threshold,
+                    Some(hbar_),
+                    dims,
+                    size,
+                    output_potential,
+                    #[cfg(feature = "expanding")]
+                    self.toml.cosmology,
+                    None, // sampling parameters
+                    self.toml.ics.clone(),
+                    #[cfg(feature = "remote-storage")]
+                    RemoteStorage::new(self.toml.remote_storage_parameters.clone(), None)
+                        .expect("failed to initialize remote storage"),
+                ));
+            }
+        } else {
+            return None;
+        }
     }
 }
 
