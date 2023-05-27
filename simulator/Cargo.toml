@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["remote-storage"]
+default = []
 remote-storage = ["shadow-drive-sdk", "solana-sdk", "arrayfire/afserde", "bincode", "num/serde", "tokio", "msm-common/remote-storage"]
 expanding = ["cosmology", "msm-common/expanding"]
 c64 = [] # only for testing

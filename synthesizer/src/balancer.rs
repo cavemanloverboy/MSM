@@ -22,7 +22,7 @@ impl<T> Balancer<T> {
         // This is the maximum number of `JoinHandle`s allowed.
         // Set equal to available_parallelism minus reduce (user input)
         // let workers: usize = std::thread::available_parallelism().unwrap().get() - tasks;
-        let workers = tasks;
+        // let workers = tasks;
 
         // This is the node id and total number of nodes
         let rank: usize = world.rank() as usize;
@@ -75,11 +75,7 @@ impl<T> Balancer<T> {
     pub fn local_set<I: Copy + Clone>(&self, items: &Vec<I>) -> Vec<I> {
 
         // Gather and return local set of items
-        items
-            .chunks(items.len().div_ceil(self.size))
-            .nth(self.rank)
-            .unwrap()
-            .to_vec()
+        items.into_iter().skip(self.rank).step_by(self.size).cloned().collect()
     }
 
     /// Adds a handle
@@ -126,3 +122,8 @@ impl<T> Balancer<T> {
 
 const SEMI_SPINLOCK: u64 = 10;
 fn semi_spinlock() { std::thread::sleep(std::time::Duration::from_millis(SEMI_SPINLOCK)) }
+
+
+fn div_ceil(a: usize, b: usize) -> usize {
+    (a + b - 1) / b
+}

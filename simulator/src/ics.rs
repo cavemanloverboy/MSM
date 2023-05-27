@@ -2,7 +2,7 @@ use crate::{
     simulation_object::*,
     utils::{
         complex::complex_constant,
-        fft::{forward_inplace, get_kgrid},
+        fft::{inverse_inplace, forward_inplace, get_kgrid},
         grid::{check_norm, normalize, Dimensions},
     },
 };
@@ -300,6 +300,7 @@ where
         + WritableElement
         + ReadableElement
         + std::fmt::LowerExp
+        + std::fmt::Debug
         + FloatConst
         + Send
         + Sync
@@ -331,6 +332,7 @@ where
     let kx = get_kgrid::<T>(parameters.dx, parameters.size).to_vec();
     let ky = &kx;
     let kz = &kx;
+    println!("k grid is {ky:?}");
 
     // Construct ψx
     let mut ψx_values = vec![Complex::<T>::new(T::zero(), T::zero()); parameters.size];
@@ -417,12 +419,12 @@ where
                 ),
             ),
             &random_uniform::<T>(ψ_dims, &engine).cast(),
-            false,
+            true,
         )),
         false,
     );
     debug_assert!(check_norm::<T>(&ψ, parameters.dk, parameters.dims));
-    forward_inplace::<T>(&mut ψ, parameters.dims, parameters.size)
+    inverse_inplace::<T>(&mut ψ, parameters.dims, parameters.size)
         .expect("failed k-space -> spatial fft in cold gaussian kspace ic initialization");
     //normalize::<T>(&mut ψ, parameters.dx, parameters.dims);
     debug_assert!(check_norm::<T>(&ψ, parameters.dx, parameters.dims));

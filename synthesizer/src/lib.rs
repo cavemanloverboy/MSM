@@ -22,8 +22,9 @@ use mpi::{datatype::PartitionMut, traits::*, Count};
 pub mod balancer;
 #[cfg(not(feature = "balancer"))]
 pub mod balancer_nompi;
-use balancer::Balancer;
+#[cfg(not(feature = "balancer"))]
 use balancer_nompi as balancer;
+use balancer::Balancer;
 
 static CREATE: AtomicBool = AtomicBool::new(false);
 macro_rules! debug_check_complex {
@@ -209,7 +210,7 @@ where
                     let mut ψk = ψ.clone();
                     for dim in 0..dims {
                         ψ_buffer = ψk.clone();
-                        ndrustfft::ndfft(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
+                        ndrustfft::ndfft_par(&ψ_buffer, &mut ψk, &mut fft_handler, dim);
                     }
                     assert!(ψk.iter().all(|x| x.re.is_finite() && x.im.is_finite()));
 
@@ -274,10 +275,10 @@ where
             // Wait for iteration though all sims (only on this thread)
             log::trace!("waiting");
             balancer.barrier();
-            log::info!("rank {} finished dump {dump}", balancer.rank);
+            let nsims_usize: usize = nsims.load(Ordering::Relaxed);
+            log::info!("rank {} finished dump {dump} with {} sims", balancer.rank, nsims_usize);
 
             // Average and dump
-            let nsims_usize: usize = nsims.load(Ordering::Relaxed);
             assert!(nsims_usize > 0);
             let path_base = format!("{}-combined/PLACEHOLDER_{:05}", sim_base_name, dump);
             {
@@ -559,7 +560,7 @@ where
                     log::debug!("Sorted {field_name}: {time_series:?}");
 
                     // Dump to disk
-                    dump_complex::<T, K, S>(
+                    dump_complex::<T>(
                         time_series,
                         combined_base_name
                             .replace("PLACEHOLDER", field_name.as_ref())

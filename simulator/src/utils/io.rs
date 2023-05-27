@@ -205,7 +205,7 @@ where
                     output_potential,
                     #[cfg(feature = "expanding")]
                     self.toml.cosmology,
-                    Some(SamplingParameters { seed, scheme }),
+                    dbg!(Some(SamplingParameters { seed, scheme })),
                     self.toml.ics.clone(),
                     #[cfg(feature = "remote-storage")]
                     RemoteStorage::new(self.toml.remote_storage_parameters.clone(), Some(seed))

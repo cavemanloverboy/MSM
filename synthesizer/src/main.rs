@@ -117,12 +117,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Initialize mpi
     #[cfg(feature = "balancer")]
-    let mut balancer = {
+    let (universe, mut balancer) = {
         println!("initializing mpi");
         let (universe, threading) = mpi::initialize_with_threading(mpi::Threading::Funneled)
             .expect("Failed to initialize mpi");
         let world = universe.world();
-        Balancer::<()>::new(world, 5)
+        (universe, Balancer::<()>::new(world, 5))
     };
     #[cfg(not(feature = "balancer"))]
     let mut balancer = Balancer::<()>::new(8);

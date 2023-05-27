@@ -20,7 +20,7 @@ pub enum InitialConditions {
     SphericalTophat { radius: f64, delta: f64, slope: f64 },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SamplingParameters {
     /// The seed used by the rng during sampling
     pub seed: u64,
